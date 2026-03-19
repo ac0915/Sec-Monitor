@@ -72,6 +72,8 @@ class Settings:
     auto_run_migrations: bool
     sec_feed_url: str
     sec_user_agent: str
+    sec_feed_pages: int
+    sec_feed_page_size: int
     request_timeout_seconds: int
     poll_interval_seconds: int
     price_provider: str
@@ -148,6 +150,8 @@ def get_settings() -> Settings:
             "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&CIK=&type=&company=&dateb=&owner=include&start=0&count=100&output=atom",
         ),
         sec_user_agent=_env_str("SEC_USER_AGENT", "SEC Monitor/2.0 contact@example.com"),
+        sec_feed_pages=_env_int("SEC_FEED_PAGES", 6),
+        sec_feed_page_size=_env_int("SEC_FEED_PAGE_SIZE", 100),
         request_timeout_seconds=_env_int("REQUEST_TIMEOUT_SECONDS", 20),
         poll_interval_seconds=_env_int("POLL_INTERVAL_SECONDS", 180),
         price_provider=_env_str("PRICE_PROVIDER", "yahoo").lower(),

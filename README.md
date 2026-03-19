@@ -19,6 +19,7 @@
 ### 1. 采集层
 
 - 轮询 SEC EDGAR Atom feed
+- 支持多页 current feed 扫描，不只盯第一页
 - 按公司名和 ticker 匹配 watchlist
 - 提取表单类型和 `8-K Item`
 - 计算 Tier 1 / 2 / 3
@@ -224,6 +225,12 @@ alembic upgrade head
 
 - `SEC_USER_AGENT`
   - SEC 要求使用真实可联系的 `User-Agent`
+- `SEC_FEED_PAGES`
+  - 默认会连续扫描多页 current feed，而不是只看第一页
+  - 默认 `6`
+- `SEC_FEED_PAGE_SIZE`
+  - 每页扫描多少条 current feed
+  - 默认 `100`
 - `DATABASE_URL`
   - 本地可以留空并使用默认 SQLite
 - `ANALYSIS_PROVIDER`

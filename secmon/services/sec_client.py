@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html import unescape
-from urllib.parse import urljoin
+from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 import feedparser
 import requests
@@ -72,48 +72,59 @@ class SECClient:
         self.session.mount("http://", adapter)
 
     def fetch_current_candidates(self) -> tuple[int, list[FilingCandidate]]:
-        response = self.session.get(
-            self.settings.sec_feed_url,
-            timeout=self.settings.request_timeout_seconds,
-        )
-        response.raise_for_status()
-
-        feed = feedparser.parse(response.content)
+        total_entries_seen = 0
         candidates: list[FilingCandidate] = []
+        seen_entry_links: set[str] = set()
 
-        for entry in list(feed.entries)[: self.settings.max_feed_entries]:
-            title = getattr(entry, "title", "").strip()
-            if not title:
-                continue
-
-            match = self._match_watchlist(title)
-            if not match:
-                continue
-
-            ticker, company_name = match
-            form_type = title.split(" - ")[0].strip() if " - " in title else "Unknown"
-            summary = unescape(getattr(entry, "summary", title))
-            sec_items = sorted(set(re.findall(r"Item\s*(\d\.\d{2})", summary, re.IGNORECASE)))
-            entry_link = getattr(entry, "link", "").strip()
-            published_at = self._parse_entry_datetime(entry)
-            accession_number = self._extract_accession_number(entry_link)
-
-            candidates.append(
-                FilingCandidate(
-                    accession_number=accession_number,
-                    ticker=ticker,
-                    company_name=company_name,
-                    title=title,
-                    form_type=form_type,
-                    entry_link=entry_link,
-                    summary=summary,
-                    sec_items=sec_items,
-                    tier=determine_tier(sec_items, form_type),
-                    published_at=published_at,
-                )
+        for page_index in range(max(1, self.settings.sec_feed_pages)):
+            page_url = self._build_feed_page_url(page_index)
+            response = self.session.get(
+                page_url,
+                timeout=self.settings.request_timeout_seconds,
             )
+            response.raise_for_status()
 
-        return len(feed.entries), candidates
+            feed = feedparser.parse(response.content)
+            entries = list(feed.entries)[: self.settings.sec_feed_page_size]
+            total_entries_seen += len(entries)
+
+            for entry in entries:
+                title = getattr(entry, "title", "").strip()
+                if not title:
+                    continue
+
+                match = self._match_watchlist(title)
+                if not match:
+                    continue
+
+                ticker, company_name = match
+                form_type = title.split(" - ")[0].strip() if " - " in title else "Unknown"
+                summary = unescape(getattr(entry, "summary", title))
+                sec_items = sorted(set(re.findall(r"Item\s*(\d\.\d{2})", summary, re.IGNORECASE)))
+                entry_link = getattr(entry, "link", "").strip()
+                if not entry_link or entry_link in seen_entry_links:
+                    continue
+                seen_entry_links.add(entry_link)
+
+                published_at = self._parse_entry_datetime(entry)
+                accession_number = self._extract_accession_number(entry_link)
+
+                candidates.append(
+                    FilingCandidate(
+                        accession_number=accession_number,
+                        ticker=ticker,
+                        company_name=company_name,
+                        title=title,
+                        form_type=form_type,
+                        entry_link=entry_link,
+                        summary=summary,
+                        sec_items=sec_items,
+                        tier=determine_tier(sec_items, form_type),
+                        published_at=published_at,
+                    )
+                )
+
+        return total_entries_seen, candidates
 
     def fetch_primary_document(self, index_url: str) -> PrimaryDocument:
         response = self.session.get(index_url, timeout=self.settings.request_timeout_seconds)
@@ -196,3 +207,11 @@ class SECClient:
             return match.group(1)
         tail = entry_link.split("/")[-1].split(".")[0]
         return tail or None
+
+    def _build_feed_page_url(self, page_index: int) -> str:
+        parts = urlsplit(self.settings.sec_feed_url)
+        query = dict(parse_qsl(parts.query, keep_blank_values=True))
+        page_size = max(1, self.settings.sec_feed_page_size)
+        query["start"] = str(page_index * page_size)
+        query["count"] = str(page_size)
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
