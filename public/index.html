@@ -1,294 +1,106 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>📊 Antony's Stock Monitor</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="sec-monitor-api-base" content="" />
+    <title>SEC Monitor Control Room</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="backdrop"></div>
+    <div class="noise"></div>
 
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+    <div class="page-shell">
+      <header class="hero-panel">
+        <div class="hero-copy">
+          <p class="eyebrow">Industrial SEC Intelligence Stack</p>
+          <h1>SEC Monitor Control Room</h1>
+          <p class="hero-text">
+            用数据库沉淀 SEC 披露、AI 分析和可投喂语料，把实时提醒升级成可持续迭代的研究基础设施。
+          </p>
 
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg:      #0f0f13;
-      --card:    #1a1a24;
-      --border:  #2a2a3a;
-      --text:    #e8e8f0;
-      --sub:     #888899;
-      --green:   #00e676;
-      --red:     #ff5252;
-      --accent:  #7c6af7;
-      --news-bg: #14141e;
-    }
-
-    @media (prefers-color-scheme: light) {
-      :root {
-        --bg:      #f0f2f8;
-        --card:    #ffffff;
-        --border:  #dde0ee;
-        --text:    #1a1a2e;
-        --sub:     #666680;
-        --news-bg: #f8f9ff;
-      }
-    }
-
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      min-height: 100vh;
-    }
-
-    header {
-      background: var(--card);
-      border-bottom: 1px solid var(--border);
-      padding: 16px 24px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
-
-    header h1 { font-size: 1.2rem; font-weight: 700; }
-    header h1 span { color: var(--accent); }
-
-    .live-badge {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 0.78rem;
-      color: var(--sub);
-    }
-
-    .live-dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: var(--green);
-      animation: pulse 1.5s infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.3; }
-    }
-
-    .container { max-width: 1400px; margin: 0 auto; padding: 24px 16px; }
-
-    .section-title {
-      font-size: 0.75rem;
-      font-weight: 600;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--sub);
-      margin-bottom: 12px;
-    }
-
-    #price-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-      gap: 10px;
-      margin-bottom: 32px;
-    }
-
-    .price-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px 14px;
-      transition: transform 0.15s;
-    }
-
-    .price-card:hover { transform: translateY(-2px); }
-    .price-card .ticker { font-size: 0.85rem; font-weight: 700; color: var(--accent); }
-    .price-card .price  { font-size: 1.15rem; font-weight: 600; margin: 4px 0 2px; }
-    .price-card .change { font-size: 0.78rem; font-weight: 500; }
-    .up   { color: var(--green); }
-    .down { color: var(--red); }
-    .price-card .updated { font-size: 0.65rem; color: var(--sub); margin-top: 4px; }
-
-    #news-feed { display: flex; flex-direction: column; gap: 12px; }
-
-    .news-card {
-      background: var(--news-bg);
-      border: 1px solid var(--border);
-      border-left: 4px solid var(--accent);
-      border-radius: 10px;
-      padding: 16px 18px;
-      animation: fadeIn 0.4s ease;
-    }
-
-    /* 🔥 MATCHING NEW PYTHON TIERS 🔥 */
-    .tier-1 { border-left-color: #ff5252; background: rgba(255,82,82,0.05); } /* EMERGENCY */
-    .tier-2 { border-left-color: #ffb300; background: rgba(255,179,0,0.05); } /* MYSTERY BOX */
-    .tier-3 { border-left-color: #00e676; background: rgba(0,230,118,0.05); } /* ROUTINE */
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(8px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-
-    .news-card .news-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 8px;
-      flex-wrap: wrap;
-    }
-
-    .news-ticker-badge {
-      background: var(--accent);
-      color: #fff;
-      font-size: 0.72rem;
-      font-weight: 700;
-      padding: 2px 8px;
-      border-radius: 20px;
-      white-space: nowrap;
-    }
-
-    .news-title { font-size: 0.88rem; font-weight: 600; flex: 1; }
-    .news-time  { font-size: 0.72rem; color: var(--sub); white-space: nowrap; }
-
-    .news-analysis {
-      font-size: 0.85rem;
-      color: var(--text);
-      line-height: 1.6;
-      white-space: pre-wrap;
-      margin-bottom: 12px;
-    }
-
-    .news-link { font-size: 0.75rem; color: var(--accent); text-decoration: none; font-weight: 500;}
-    .news-link:hover { text-decoration: underline; }
-
-    .no-news {
-      text-align: center;
-      color: var(--sub);
-      font-size: 0.88rem;
-      padding: 40px;
-    }
-
-    #last-updated {
-      text-align: center;
-      font-size: 0.72rem;
-      color: var(--sub);
-      margin-top: 32px;
-      padding-bottom: 32px;
-    }
-  </style>
-</head>
-
-<body>
-  <header>
-    <h1>📊 <span>Antony's</span> Stock Monitor</h1>
-    <div class="live-badge">
-      <div class="live-dot"></div>
-      LIVE
-    </div>
-  </header>
-
-  <div class="container">
-    <div class="section-title">💹 Real-Time Prices</div>
-    <div id="price-grid">
-      <div class="no-news">Loading prices...</div>
-    </div>
-
-    <div class="section-title">📰 SEC Filing Alerts</div>
-    <div id="news-feed">
-      <div class="no-news">Waiting for filings...</div>
-    </div>
-
-    <div id="last-updated">Last updated: —</div>
-  </div>
-
-  <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyAUZOaV31sNiugpCkUTvWmzng8QCLMHfzE",
-      authDomain: "stock-f54bd.firebaseapp.com",
-      databaseURL: "https://stock-f54bd-default-rtdb.firebaseio.com",
-      projectId: "stock-f54bd",
-      storageBucket: "stock-f54bd.firebasestorage.app",
-      messagingSenderId: "310386482507",
-      appId: "1:310386482507:web:f86667391977c925cd9cce"
-    };
-
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
-
-    db.ref("/prices").on("value", (snapshot) => {
-      const data = snapshot.val();
-      const grid = document.getElementById("price-grid");
-      grid.innerHTML = "";
-
-      if (!data) {
-        grid.innerHTML = '<div class="no-news">No price data yet.</div>';
-        return;
-      }
-
-      Object.entries(data)
-        .sort((a, b) => a.localeCompare(b))
-        .forEach(([ticker, info]) => {
-          const isUp  = info.change_pct >= 0;
-          const arrow = isUp ? "▲" : "▼";
-          const cls   = isUp ? "up" : "down";
-          const card  = document.createElement("div");
-          card.className = "price-card";
-          card.innerHTML = `
-            <div class="ticker">${ticker}</div>
-            <div class="price">$${info.price.toFixed(2)}</div>
-            <div class="change ${cls}">${arrow} ${Math.abs(info.change_pct).toFixed(2)}%</div>
-            <div class="updated">${info.updated_at}</div>
-          `;
-          grid.appendChild(card);
-        });
-
-      document.getElementById("last-updated").textContent =
-        "Last updated: " + new Date().toLocaleString();
-    });
-
-    db.ref("/news").limitToLast(50).on("value", (snapshot) => {
-      const data = snapshot.val();
-      const feed = document.getElementById("news-feed");
-      feed.innerHTML = "";
-
-      if (!data) {
-        feed.innerHTML = '<div class="no-news">No SEC filings detected yet.</div>';
-        return;
-      }
-
-      // Sort oldest to newest (to match how Firebase brings them in) 
-      // but print newest first.
-      const entries = Object.values(data).sort((a,b) => b.timestamp - a.timestamp);
-      
-      entries.forEach((item) => {
-        const card = document.createElement("div");
-        
-        // Dynamically assign the tier class based on your Python code (1, 2, or 3)
-        const tierClass = item.tier ? `tier-${item.tier}` : 'tier-3';
-        card.className = `news-card ${tierClass}`;
-        
-        // Format the date nicely to the user's local time zone
-        const localTime = new Date(item.timestamp * 1000).toLocaleString();
-
-        // Convert the markdown-style bold (**) into standard bold text for the web
-        const formattedSummary = item.summary ? item.summary.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') : 'No summary available.';
-
-        card.innerHTML = `
-          <div class="news-header">
-            <span class="news-ticker-badge">$${item.ticker}</span>
-            <span class="news-title">${item.companyName} - SEC Items: ${item.secItems}</span>
-            <span class="news-time">${localTime}</span>
+          <div class="status-row">
+            <div class="status-pill" id="health-pill">Connecting real data</div>
+            <div class="status-meta" id="status-meta">正在连接真实 SEC 与数据库数据源。</div>
           </div>
-          <div class="news-analysis">${formattedSummary}</div>
-          <a class="news-link" href="${item.filingUrl}" target="_blank">
-            🔗 View SEC Filing →
-          </a>
-        `;
-        feed.appendChild(card);
-      });
-    });
-  </script>
-</body>
+        </div>
+
+        <div class="hero-metrics" id="hero-metrics">
+          <div class="empty-state compact-empty">等待真实数据入库后显示指标。</div>
+        </div>
+      </header>
+
+      <main class="grid-layout">
+        <section class="panel span-8">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Flow</p>
+              <h2>Signal Velocity</h2>
+            </div>
+            <p class="panel-caption">最近 14 天分 tier 入库情况，直接反映 watchlist 的事件密度。</p>
+          </div>
+          <div class="chart-panel" id="trend-chart"></div>
+        </section>
+
+        <section class="panel span-4">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Corpus</p>
+              <h2>LLM Readiness</h2>
+            </div>
+            <p class="panel-caption">可用于 RAG、评测、微调前清洗的核心语料统计。</p>
+          </div>
+          <div class="corpus-grid" id="corpus-grid"></div>
+          <div class="sentiment-stack" id="sentiment-stack"></div>
+        </section>
+
+        <section class="panel span-12">
+          <div class="panel-header panel-header-wide">
+            <div>
+              <p class="panel-kicker">Live Feed</p>
+              <h2>Filing Dossiers</h2>
+            </div>
+            <div class="feed-controls">
+              <div class="tier-filters" id="tier-filters">
+                <button class="filter-chip is-active" data-tier="all">All</button>
+                <button class="filter-chip" data-tier="1">Tier 1</button>
+                <button class="filter-chip" data-tier="2">Tier 2</button>
+                <button class="filter-chip" data-tier="3">Tier 3</button>
+              </div>
+              <div class="result-meta" id="result-meta">正在读取真实 filing 数据…</div>
+            </div>
+          </div>
+          <div class="filings-feed" id="filings-feed"></div>
+        </section>
+
+        <section class="panel span-12">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Operations</p>
+              <h2>Ingestion Runs</h2>
+            </div>
+            <p class="panel-caption">轮询质量、匹配率和分析覆盖率都在这里。</p>
+          </div>
+          <div class="runs-table" id="runs-table"></div>
+        </section>
+      </main>
+    </div>
+
+    <div class="overlay hidden" id="overlay"></div>
+    <aside class="drawer hidden" id="drawer" aria-hidden="true">
+      <button class="drawer-close" id="drawer-close" aria-label="Close dossier">Close</button>
+      <div class="drawer-scroll">
+        <div id="drawer-content"></div>
+      </div>
+    </aside>
+
+    <script src="/static/app.js"></script>
+  </body>
 </html>

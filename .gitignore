@@ -210,3 +210,9 @@ serviceAccountKey.json
 gemini_budget.json
 seen_filings.json
 .firebase/
+.DS_Store
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+data/llm_corpus.jsonl
+node_modules/

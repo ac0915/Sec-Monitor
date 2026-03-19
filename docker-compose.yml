@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sec_monitor
+      POSTGRES_USER: sec_monitor
+      POSTGRES_PASSWORD: sec_monitor
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://sec_monitor:sec_monitor@postgres:5432/sec_monitor
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+
+  worker:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://sec_monitor:sec_monitor@postgres:5432/sec_monitor
+    command: python sec_monitor.py run-worker
+
+volumes:
+  postgres_data:
