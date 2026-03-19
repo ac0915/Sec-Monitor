@@ -1,7 +1,9 @@
+alembic>=1.14,<2
 beautifulsoup4>=4.12.3,<5
+cryptography>=44,<47
 fastapi>=0.118.0,<1
 feedparser>=6.0.11,<7
-google-generativeai>=0.8.5,<1
+google-genai>=1.68.0,<2
 psycopg[binary]>=3.2.3,<4
 python-dotenv>=1.0.1,<2
 requests>=2.32.3,<3

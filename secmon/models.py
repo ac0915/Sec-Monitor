@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -98,6 +98,28 @@ class FilingChunk(Base):
     filing: Mapped[Filing] = relationship(back_populates="chunks")
 
 
+class FilingChunkEmbedding(Base):
+    __tablename__ = "filing_chunk_embeddings"
+    __table_args__ = (
+        UniqueConstraint("chunk_id", "provider", "model", name="uq_chunk_embedding_provider_model"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chunk_id: Mapped[int] = mapped_column(ForeignKey("filing_chunks.id"), index=True, nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    model: Mapped[str] = mapped_column(String(120), nullable=False)
+    dimensions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    vector: Mapped[list[float] | None] = mapped_column(JSON)
+    raw_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+    chunk: Mapped[FilingChunk] = relationship()
+
+
 class TelegramChat(Base):
     __tablename__ = "telegram_chats"
 
@@ -158,3 +180,249 @@ class AppConfigEntry(Base):
     value: Mapped[str] = mapped_column(Text, nullable=False)
     is_secret: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class AdminUser(Base):
+    __tablename__ = "admin_users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(80), unique=True, index=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), default="admin", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AdminApiToken(Base):
+    __tablename__ = "admin_api_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("admin_users.id"), index=True, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    label: Mapped[str | None] = mapped_column(String(120))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    user: Mapped[AdminUser] = relationship()
+
+
+class AdminAuditEvent(Base):
+    __tablename__ = "admin_audit_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), index=True)
+    action: Mapped[str] = mapped_column(String(120), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    resource_id: Mapped[str | None] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(String(32), default="success", nullable=False)
+    event_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    user: Mapped[AdminUser | None] = relationship()
+
+
+class PriceIngestionRun(Base):
+    __tablename__ = "price_ingestion_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="running", nullable=False)
+    requested_tickers: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    successful_tickers: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed_tickers: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PriceSnapshot(Base):
+    __tablename__ = "price_snapshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticker: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    currency: Mapped[str | None] = mapped_column(String(16))
+    exchange: Mapped[str | None] = mapped_column(String(64))
+    market_state: Mapped[str | None] = mapped_column(String(32))
+    regular_market_price: Mapped[float | None] = mapped_column(Float)
+    previous_close: Mapped[float | None] = mapped_column(Float)
+    change_amount: Mapped[float | None] = mapped_column(Float)
+    change_percent: Mapped[float | None] = mapped_column(Float)
+    day_low: Mapped[float | None] = mapped_column(Float)
+    day_high: Mapped[float | None] = mapped_column(Float)
+    volume: Mapped[int | None] = mapped_column(Integer)
+    market_cap: Mapped[float | None] = mapped_column(Float)
+    source_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True, nullable=False)
+
+
+class LabelTask(Base):
+    __tablename__ = "label_tasks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    filing_id: Mapped[int | None] = mapped_column(ForeignKey("filings.id"), index=True)
+    analysis_result_id: Mapped[int | None] = mapped_column(ForeignKey("analysis_results.id"), index=True)
+    chunk_id: Mapped[int | None] = mapped_column(ForeignKey("filing_chunks.id"), index=True)
+    task_type: Mapped[str] = mapped_column(String(64), default="filing_assessment", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="open", nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
+    task_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"))
+    assigned_to_user_id: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    filing: Mapped[Filing | None] = relationship()
+    analysis_result: Mapped[AnalysisResult | None] = relationship()
+    chunk: Mapped[FilingChunk | None] = relationship()
+    created_by: Mapped[AdminUser | None] = relationship(foreign_keys=[created_by_user_id])
+    assigned_to: Mapped[AdminUser | None] = relationship(foreign_keys=[assigned_to_user_id])
+    labels: Mapped[list[LabelRecord]] = relationship(
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="LabelRecord.created_at",
+    )
+
+
+class LabelRecord(Base):
+    __tablename__ = "label_records"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("label_tasks.id"), index=True, nullable=False)
+    filing_id: Mapped[int | None] = mapped_column(ForeignKey("filings.id"), index=True)
+    analysis_result_id: Mapped[int | None] = mapped_column(ForeignKey("analysis_results.id"), index=True)
+    chunk_id: Mapped[int | None] = mapped_column(ForeignKey("filing_chunks.id"), index=True)
+    labeler_user_id: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), index=True)
+    label_type: Mapped[str] = mapped_column(String(64), default="filing_assessment", nullable=False)
+    impact_label: Mapped[str | None] = mapped_column(String(16))
+    relevance_label: Mapped[str | None] = mapped_column(String(32))
+    summary_text: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+    label_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    task: Mapped[LabelTask] = relationship(back_populates="labels")
+    filing: Mapped[Filing | None] = relationship()
+    analysis_result: Mapped[AnalysisResult | None] = relationship()
+    chunk: Mapped[FilingChunk | None] = relationship()
+    labeler: Mapped[AdminUser | None] = relationship()
+
+
+class EvaluationRun(Base):
+    __tablename__ = "evaluation_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    model: Mapped[str] = mapped_column(String(120), nullable=False)
+    label_type: Mapped[str] = mapped_column(String(64), default="filing_assessment", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="running", nullable=False)
+    total_examples: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    completed_examples: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    impact_accuracy: Mapped[float | None] = mapped_column(Float)
+    summary_similarity_mean: Mapped[float | None] = mapped_column(Float)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    run_metadata: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    created_by: Mapped[AdminUser | None] = relationship()
+    examples: Mapped[list[EvaluationExample]] = relationship(
+        back_populates="evaluation_run",
+        cascade="all, delete-orphan",
+        order_by="EvaluationExample.id",
+    )
+
+
+class EvaluationExample(Base):
+    __tablename__ = "evaluation_examples"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    evaluation_run_id: Mapped[int] = mapped_column(ForeignKey("evaluation_runs.id"), index=True, nullable=False)
+    filing_id: Mapped[int] = mapped_column(ForeignKey("filings.id"), index=True, nullable=False)
+    label_record_id: Mapped[int] = mapped_column(ForeignKey("label_records.id"), index=True, nullable=False)
+    predicted_impact: Mapped[str | None] = mapped_column(String(16))
+    predicted_summary: Mapped[str | None] = mapped_column(Text)
+    predicted_takeaways: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    impact_match: Mapped[bool | None] = mapped_column(Boolean)
+    summary_similarity: Mapped[float | None] = mapped_column(Float)
+    raw_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    evaluation_run: Mapped[EvaluationRun] = relationship(back_populates="examples")
+    filing: Mapped[Filing] = relationship()
+    label_record: Mapped[LabelRecord] = relationship()
+
+
+class LlmUsageEvent(Base):
+    __tablename__ = "llm_usage_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    model: Mapped[str | None] = mapped_column(String(128))
+    feature: Mapped[str] = mapped_column(String(64), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    requests: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    reasoning_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    cached_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    cost_usd: Mapped[float | None] = mapped_column(Float)
+    extra_metrics: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    raw_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True, nullable=False)
+
+
+class LlmUsageSnapshot(Base):
+    __tablename__ = "llm_usage_snapshots"
+    __table_args__ = (
+        UniqueConstraint("provider", "source", "period_key", name="uq_llm_usage_snapshots_provider_source_period"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    period_key: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    period_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    period_ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    primary_metric: Mapped[str] = mapped_column(String(64), nullable=False)
+    primary_unit: Mapped[str] = mapped_column(String(32), nullable=False)
+    primary_value: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    totals: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    raw_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True, nullable=False)
+
+
+class LlmUsageAlertEvent(Base):
+    __tablename__ = "llm_usage_alert_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "period_key",
+            "metric_name",
+            "threshold_percent",
+            name="uq_llm_usage_alert_events_provider_period_metric_threshold",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    period_key: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    metric_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    metric_unit: Mapped[str] = mapped_column(String(32), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    threshold_percent: Mapped[float] = mapped_column(Float, nullable=False)
+    limit_value: Mapped[float] = mapped_column(Float, nullable=False)
+    observed_value: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    telegram_delivery_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    raw_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    triggered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

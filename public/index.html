@@ -37,6 +37,7 @@
 
           <div class="hero-actions">
             <button class="ghost-button" id="command-open" type="button">Search / Command</button>
+            <button class="ghost-button" id="llm-settings-open" type="button">LLM Control</button>
             <button class="ghost-button" id="refresh-button" type="button">Refresh Now</button>
             <div class="shortcut-hint">Ctrl/Cmd + K</div>
           </div>
@@ -232,6 +233,20 @@
         </div>
         <div class="command-results" id="command-results"></div>
         <div class="command-footer">回车执行，Esc 关闭。支持快速命令、ticker 聚焦和 filing 直达。</div>
+      </div>
+    </div>
+
+    <div class="command-overlay llm-overlay hidden" id="llm-overlay">
+      <div class="llm-modal" role="dialog" aria-modal="true" aria-label="LLM control plane">
+        <div class="llm-header">
+          <div>
+            <p class="panel-kicker">Control Plane</p>
+            <h2>LLM Provider Settings</h2>
+            <div class="status-meta" id="llm-runtime-meta">在页面里管理 provider、密钥和授权状态。</div>
+          </div>
+          <button class="ghost-button compact" id="llm-close" type="button">Close</button>
+        </div>
+        <div class="llm-body" id="llm-body"></div>
       </div>
     </div>
 

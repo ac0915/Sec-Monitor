@@ -7,6 +7,128 @@
   const refreshMs = 45000;
   const prefsKey = "sec-monitor-ui-v3";
   const commandHistoryKey = "sec-monitor-command-history-v1";
+  const guiSessionKey = "sec-monitor-gui-session-v1";
+
+  const providerFormSpecs = {
+    gemini: {
+      label: "Google Gemini",
+      hint: "适合直接填入 Google AI Studio API key。",
+      fields: [
+        { key: "model", label: "Model", type: "text", placeholder: "gemini-2.5-flash" },
+        { key: "api_key", label: "API Key", type: "password", secret: true, placeholder: "留空表示保留已保存密钥" },
+      ],
+    },
+    deepseek: {
+      label: "DeepSeek",
+      hint: "走标准 chat completions 接口，可自定义 base URL。",
+      fields: [
+        { key: "model", label: "Model", type: "text", placeholder: "deepseek-chat" },
+        { key: "base_url", label: "Base URL", type: "text", placeholder: "https://api.deepseek.com" },
+        { key: "api_key", label: "API Key", type: "password", secret: true, placeholder: "留空表示保留已保存密钥" },
+      ],
+    },
+    grok: {
+      label: "xAI Grok",
+      hint: "使用 xAI REST chat API。",
+      fields: [
+        { key: "model", label: "Model", type: "text", placeholder: "grok-4" },
+        { key: "base_url", label: "Base URL", type: "text", placeholder: "https://api.x.ai/v1" },
+        { key: "api_key", label: "API Key", type: "password", secret: true, placeholder: "留空表示保留已保存密钥" },
+      ],
+    },
+    github: {
+      label: "GitHub Models",
+      hint: "通过 GitHub 官方 models inference API 调用。",
+      fields: [
+        { key: "model", label: "Model", type: "text", placeholder: "openai/gpt-4.1" },
+        { key: "base_url", label: "Base URL", type: "text", placeholder: "https://models.github.ai" },
+        { key: "api_version", label: "API Version", type: "text", placeholder: "2026-03-10" },
+        { key: "org", label: "Organization", type: "text", placeholder: "可选，不填则走通用 endpoint" },
+        { key: "token", label: "Token", type: "password", secret: true, placeholder: "留空表示保留已保存 token" },
+      ],
+    },
+    copilot: {
+      label: "GitHub Copilot",
+      hint: "这里管理模型与本机 Node 路径。真正授权来自当前机器上的 Copilot CLI 登录态。",
+      fields: [
+        { key: "model", label: "Model", type: "text", placeholder: "gpt-4.1", envKey: "COPILOT_MODEL" },
+        { key: "node_binary", label: "Node Binary", type: "text", placeholder: "node", envKey: "COPILOT_NODE_BINARY" },
+      ],
+    },
+  };
+
+  const usageDefaults = {
+    gemini: {
+      enabled: false,
+      alert_enabled: true,
+      prefer_provider_api: false,
+      metric_name: "total_tokens",
+      metric_unit: "tokens",
+      limit_value: 0,
+      threshold_percentages: [50, 80, 90, 100],
+      billing_actor_type: "user",
+      billing_actor: "",
+      billing_token: "",
+      has_billing_token: false,
+      billing_token_masked: "",
+    },
+    deepseek: {
+      enabled: false,
+      alert_enabled: true,
+      prefer_provider_api: false,
+      metric_name: "total_tokens",
+      metric_unit: "tokens",
+      limit_value: 0,
+      threshold_percentages: [50, 80, 90, 100],
+      billing_actor_type: "user",
+      billing_actor: "",
+      billing_token: "",
+      has_billing_token: false,
+      billing_token_masked: "",
+    },
+    grok: {
+      enabled: false,
+      alert_enabled: true,
+      prefer_provider_api: false,
+      metric_name: "total_tokens",
+      metric_unit: "tokens",
+      limit_value: 0,
+      threshold_percentages: [50, 80, 90, 100],
+      billing_actor_type: "user",
+      billing_actor: "",
+      billing_token: "",
+      has_billing_token: false,
+      billing_token_masked: "",
+    },
+    github: {
+      enabled: false,
+      alert_enabled: true,
+      prefer_provider_api: false,
+      metric_name: "total_tokens",
+      metric_unit: "tokens",
+      limit_value: 0,
+      threshold_percentages: [50, 80, 90, 100],
+      billing_actor_type: "user",
+      billing_actor: "",
+      billing_token: "",
+      has_billing_token: false,
+      billing_token_masked: "",
+    },
+    copilot: {
+      enabled: false,
+      alert_enabled: true,
+      prefer_provider_api: false,
+      metric_name: "requests",
+      metric_unit: "requests",
+      limit_value: 0,
+      threshold_percentages: [50, 80, 90, 100],
+      billing_actor_type: "user",
+      billing_actor: "",
+      billing_token: "",
+      has_billing_token: false,
+      billing_token_masked: "",
+    },
+  };
 
   const defaultPrefs = {
     query: "",
@@ -26,6 +148,19 @@
     prefs: loadPrefs(),
     commandQuery: "",
     commandHistory: loadCommandHistory(),
+    gui: {
+      bootstrap: null,
+      settings: null,
+      draft: null,
+      modelCatalogs: {},
+      usageSummary: null,
+      pendingPassword: "",
+      clearSecretFields: {},
+      token: loadGuiToken(),
+      feedback: "",
+      feedbackTone: "",
+      testResult: null,
+    },
   };
 
   const els = {
@@ -66,6 +201,11 @@
     commandInput: document.getElementById("command-input"),
     commandResults: document.getElementById("command-results"),
     commandClose: document.getElementById("command-close"),
+    llmSettingsOpen: document.getElementById("llm-settings-open"),
+    llmOverlay: document.getElementById("llm-overlay"),
+    llmBody: document.getElementById("llm-body"),
+    llmClose: document.getElementById("llm-close"),
+    llmRuntimeMeta: document.getElementById("llm-runtime-meta"),
   };
 
   function loadPrefs() {
@@ -103,6 +243,23 @@
       return Array.isArray(parsed) ? parsed.map((value) => String(value)).slice(0, 8) : [];
     } catch {
       return [];
+    }
+  }
+
+  function loadGuiToken() {
+    try {
+      return sessionStorage.getItem(guiSessionKey) || "";
+    } catch {
+      return "";
+    }
+  }
+
+  function saveGuiToken(token) {
+    try {
+      if (token) sessionStorage.setItem(guiSessionKey, token);
+      else sessionStorage.removeItem(guiSessionKey);
+    } catch {
+      // ignore sessionStorage failures
     }
   }
 
@@ -166,13 +323,40 @@
     return "monitoring";
   }
 
+  async function requestJson(path, options) {
+    const config = options || {};
+    const headers = { ...(config.headers || {}) };
+    if (config.token) {
+      headers.Authorization = `Bearer ${config.token}`;
+    }
+    const fetchOptions = {
+      method: config.method || "GET",
+      headers,
+    };
+    if (config.body !== undefined) {
+      headers["Content-Type"] = "application/json";
+      fetchOptions.body = JSON.stringify(config.body);
+    }
+
+    const response = await fetch(`${apiBase}${path}`, fetchOptions);
+    const text = await response.text();
+    let payload = null;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+      payload = null;
+    }
+    if (!response.ok) {
+      const message = payload?.detail || payload?.message || text || `${response.status} ${response.statusText}`;
+      const error = new Error(message);
+      error.status = response.status;
+      throw error;
+    }
+    return payload;
+  }
+
   function fetchJson(path) {
-    return fetch(`${apiBase}${path}`).then((response) => {
-      if (!response.ok) {
-        throw new Error(`${response.status} ${response.statusText}`);
-      }
-      return response.json();
-    });
+    return requestJson(path);
   }
 
   function buildFeedUrl() {
@@ -227,17 +411,20 @@
     const telegram = dashboard?.telegram;
     const dataPolicy = dashboard?.data_policy;
     const analysisText = analysis
-      ? `analysis ${analysis.provider}/${analysis.model || "unconfigured"}${analysis.available ? "" : " disabled"}`
+      ? `analysis ${analysis.provider}/${analysis.model || "unconfigured"}${analysis.available ? "" : " disabled"} via ${
+          analysis.runtime_source || "env"
+        }`
       : "analysis unavailable";
     const telegramText = telegram?.assistant_available
       ? `Telegram assistant ready · ${telegram.subscribed_chats} subscribed`
       : "Telegram assistant disabled";
     const realText = dataPolicy?.synthetic_data === false ? "real-data only" : "data policy unknown";
+    const warningText = analysis?.runtime_error ? ` · config warning: ${analysis.runtime_error}` : "";
 
     if (!lastRun) {
       els.healthPill.textContent = "Waiting for first real ingestion";
       els.healthPill.className = "status-pill is-warn";
-      els.statusMeta.textContent = `${analysisText} · ${telegramText} · ${realText}`;
+      els.statusMeta.textContent = `${analysisText} · ${telegramText} · ${realText}${warningText}`;
       return;
     }
 
@@ -247,7 +434,7 @@
     els.statusMeta.textContent =
       `${formatDate(lastRun.completed_at || lastRun.started_at)} · seen ${numberFormat(lastRun.entries_seen)} · matched ${numberFormat(
         lastRun.matched_entries
-      )} · ${analysisText} · ${telegramText} · ${realText}`;
+      )} · ${analysisText} · ${telegramText} · ${realText}${warningText}`;
   }
 
   function renderHeroMetrics() {
@@ -301,7 +488,7 @@
       {
         label: "LLM",
         value: analysis.available ? "Ready" : "Fallback",
-        meta: `${analysis.provider}/${analysis.model || "n/a"}`,
+        meta: `${analysis.provider}/${analysis.model || "n/a"} · ${analysis.runtime_source || "env"}`,
       },
       {
         label: "Telegram",
@@ -512,6 +699,7 @@
       <div class="metric-meta">LLM: ${escapeHtml(
         dashboard.analysis.available ? `${dashboard.analysis.provider}/${dashboard.analysis.model}` : "fallback mode"
       )}</div>
+      <div class="metric-meta">LLM source: ${escapeHtml(dashboard.analysis.runtime_source || "env")}</div>
       <div class="metric-meta">Telegram assistant: ${dashboard.telegram.assistant_available ? "enabled" : "disabled"}</div>
       <div class="metric-meta">Real-data policy: synthetic_data = false</div>
     `;
@@ -870,6 +1058,936 @@
     }
   }
 
+  function clearGuiSession() {
+    state.gui.token = "";
+    state.gui.settings = null;
+    state.gui.draft = null;
+    state.gui.modelCatalogs = {};
+    state.gui.usageSummary = null;
+    state.gui.pendingPassword = "";
+    state.gui.clearSecretFields = {};
+    state.gui.testResult = null;
+    saveGuiToken("");
+  }
+
+  function setGuiFeedback(message, tone) {
+    state.gui.feedback = String(message || "").trim();
+    state.gui.feedbackTone = tone || "";
+  }
+
+  function buildGuiDraft(maskedConfig) {
+    const config = maskedConfig || {};
+    const providers = config.providers || {};
+    const usageMonitoring = config.usage_monitoring?.providers || {};
+    return {
+      analysis_provider: config.analysis_provider || "gemini",
+      analysis_temperature: config.analysis_temperature ?? 0.1,
+      analysis_max_tokens: config.analysis_max_tokens ?? 900,
+      analysis_timeout_seconds: config.analysis_timeout_seconds ?? 120,
+      providers: {
+        gemini: {
+          model: providers.gemini?.model || "gemini-2.5-flash",
+          api_key: "",
+        },
+        deepseek: {
+          model: providers.deepseek?.model || "deepseek-chat",
+          base_url: providers.deepseek?.base_url || "https://api.deepseek.com",
+          api_key: "",
+        },
+        grok: {
+          model: providers.grok?.model || "grok-4",
+          base_url: providers.grok?.base_url || "https://api.x.ai/v1",
+          api_key: "",
+        },
+        github: {
+          model: providers.github?.model || "openai/gpt-4.1",
+          base_url: providers.github?.base_url || "https://models.github.ai",
+          api_version: providers.github?.api_version || "2026-03-10",
+          org: providers.github?.org || "",
+          token: "",
+        },
+        copilot: {
+          model: providers.copilot?.model || "gpt-4.1",
+          node_binary: providers.copilot?.node_binary || "node",
+        },
+      },
+      usage_monitoring: {
+        providers: {
+          gemini: {
+            ...usageDefaults.gemini,
+            ...(usageMonitoring.gemini || {}),
+            billing_token: "",
+            metric_unit: metricUnitForName(usageMonitoring.gemini?.metric_name || usageDefaults.gemini.metric_name),
+          },
+          deepseek: {
+            ...usageDefaults.deepseek,
+            ...(usageMonitoring.deepseek || {}),
+            billing_token: "",
+            metric_unit: metricUnitForName(usageMonitoring.deepseek?.metric_name || usageDefaults.deepseek.metric_name),
+          },
+          grok: {
+            ...usageDefaults.grok,
+            ...(usageMonitoring.grok || {}),
+            billing_token: "",
+            metric_unit: metricUnitForName(usageMonitoring.grok?.metric_name || usageDefaults.grok.metric_name),
+          },
+          github: {
+            ...usageDefaults.github,
+            ...(usageMonitoring.github || {}),
+            billing_token: "",
+            metric_unit: metricUnitForName(usageMonitoring.github?.metric_name || usageDefaults.github.metric_name),
+          },
+          copilot: {
+            ...usageDefaults.copilot,
+            ...(usageMonitoring.copilot || {}),
+            billing_token: "",
+            metric_unit: metricUnitForName(usageMonitoring.copilot?.metric_name || usageDefaults.copilot.metric_name),
+          },
+        },
+      },
+    };
+  }
+
+  function currentGuiSnapshot() {
+    return state.gui.settings || state.gui.bootstrap;
+  }
+
+  function updateGuiRuntimeMeta() {
+    const snapshot = currentGuiSnapshot();
+    if (!snapshot) {
+      els.llmRuntimeMeta.textContent = "在页面里管理 provider、密钥和授权状态。";
+      return;
+    }
+    const current = snapshot.current || {};
+    const source = snapshot.runtime_source || "env";
+    const provider = current.provider || "n/a";
+    const model = current.model || "unconfigured";
+    const availability = current.available ? "ready" : current.reason || "unavailable";
+    els.llmRuntimeMeta.textContent = `Runtime ${source} · ${provider}/${model} · ${availability}`;
+  }
+
+  function getMaskedConfig() {
+    return state.gui.settings?.masked_config || { providers: {} };
+  }
+
+  function getProviderMasked(providerId) {
+    return getMaskedConfig().providers?.[providerId] || {};
+  }
+
+  function getProviderCatalog(providerId) {
+    return (
+      state.gui.modelCatalogs?.[providerId] || {
+        loading: false,
+        error: "",
+        source: "",
+        models: [],
+        count: 0,
+      }
+    );
+  }
+
+  function findCatalogModel(providerId, modelId) {
+    const catalog = getProviderCatalog(providerId);
+    return (catalog.models || []).find((item) => item.id === modelId) || null;
+  }
+
+  function isSecretClearing(providerId, field) {
+    return Boolean(state.gui.clearSecretFields?.[providerId]?.[field]);
+  }
+
+  function getSecretStatus(providerId, field) {
+    const provider = getProviderMasked(providerId);
+    if (providerId === "github" && field === "token") {
+      return {
+        hasSecret: Boolean(provider.has_token),
+        masked: provider.token_masked || "",
+      };
+    }
+    return {
+      hasSecret: Boolean(provider.has_api_key),
+      masked: provider.api_key_masked || "",
+    };
+  }
+
+  function buildGuiPayloadFromDraft() {
+    const draft = state.gui.draft;
+    const clearSecretFields = {};
+    Object.entries(state.gui.clearSecretFields || {}).forEach(([providerId, fields]) => {
+      const activeFields = Object.entries(fields || {})
+        .filter(([, enabled]) => enabled)
+        .map(([field]) => field);
+      if (activeFields.length) {
+        clearSecretFields[providerId] = activeFields;
+      }
+    });
+    return {
+      analysis_provider: draft.analysis_provider,
+      analysis_temperature: Number(draft.analysis_temperature || 0),
+      analysis_max_tokens: Number(draft.analysis_max_tokens || 0),
+      analysis_timeout_seconds: Number(draft.analysis_timeout_seconds || 0),
+      providers: draft.providers,
+      usage_monitoring: draft.usage_monitoring,
+      clear_secret_fields: clearSecretFields,
+    };
+  }
+
+  function getUsageDraft(providerId) {
+    return state.gui.draft?.usage_monitoring?.providers?.[providerId] || { ...(usageDefaults[providerId] || {}) };
+  }
+
+  function getUsageSummary(providerId) {
+    const providers = state.gui.usageSummary?.providers || [];
+    return providers.find((item) => item.provider === providerId) || null;
+  }
+
+  function formatMetricValue(value, unit) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return "N/A";
+    const numeric = Number(value);
+    if (unit === "usd") return `$${numeric.toFixed(2)}`;
+    if (unit === "tokens" || unit === "requests") return `${numberFormat(numeric)} ${unit}`;
+    return `${numeric.toFixed(2)} ${unit}`;
+  }
+
+  function metricOptionsForProvider(providerId) {
+    if (providerId === "copilot") {
+      return [
+        { value: "requests", label: "Requests" },
+        { value: "total_tokens", label: "Total Tokens" },
+        { value: "cost_usd", label: "Cost USD" },
+      ];
+    }
+    return [
+      { value: "total_tokens", label: "Total Tokens" },
+      { value: "cost_usd", label: "Cost USD" },
+      { value: "requests", label: "Requests" },
+    ];
+  }
+
+  function metricUnitForName(metricName) {
+    if (metricName === "cost_usd") return "usd";
+    if (metricName === "requests") return "requests";
+    return "tokens";
+  }
+
+  function renderModelCatalogField(providerId, draftProvider) {
+    const catalog = getProviderCatalog(providerId);
+    const options = Array.isArray(catalog.models) ? catalog.models : [];
+    const currentModel = String(draftProvider.model || "").trim();
+    const hasSelectedOption = options.some((item) => item.id === currentModel);
+    const selectedMeta = findCatalogModel(providerId, currentModel);
+    let statusText = "使用当前输入或已保存的授权信息拉取 provider 可用模型。";
+    if (catalog.loading) {
+      statusText = "正在拉取模型列表…";
+    } else if (catalog.error) {
+      statusText = catalog.error;
+    } else if (options.length) {
+      statusText = `已载入 ${options.length} 个模型，来源 ${catalog.source || "provider API"}。`;
+    }
+
+    return `
+      <div class="llm-stack">
+        <div class="provider-card-meta">
+          <div class="secret-meta">${escapeHtml(statusText)}</div>
+          <button
+            class="ghost-button compact"
+            type="button"
+            data-gui-refresh-models="${escapeHtml(providerId)}"
+            ${catalog.loading ? "disabled" : ""}
+          >
+            ${catalog.loading ? "Refreshing..." : "Refresh Models"}
+          </button>
+        </div>
+        <label class="field-shell">
+          <span>Model Catalog</span>
+          <select data-gui-provider="${escapeHtml(providerId)}" data-gui-model-select="1">
+            <option value="__custom__"${hasSelectedOption ? "" : " selected"}>Custom / Manual Input</option>
+            ${options
+              .map(
+                (item) => `
+                  <option value="${escapeHtml(item.id)}"${item.id === currentModel ? " selected" : ""}>
+                    ${escapeHtml(item.label || item.id)}${item.label && item.label !== item.id ? ` · ${escapeHtml(item.id)}` : ""}
+                  </option>
+                `
+              )
+              .join("")}
+          </select>
+        </label>
+        <label class="field-shell">
+          <span>Selected Model</span>
+          <input
+            type="text"
+            value="${escapeHtml(currentModel)}"
+            placeholder="输入自定义 model，或从上方目录选择"
+            data-gui-provider="${escapeHtml(providerId)}"
+            data-gui-field="model"
+          />
+        </label>
+        ${
+          selectedMeta?.description
+            ? `<div class="secret-meta">${escapeHtml(selectedMeta.description)}</div>`
+            : ""
+        }
+      </div>
+    `;
+  }
+
+  async function loadGuiBootstrap(options) {
+    try {
+      state.gui.bootstrap = await fetchJson("/api/gui/llm/bootstrap");
+      updateGuiRuntimeMeta();
+      if (!options?.quiet) renderGuiModal();
+      return state.gui.bootstrap;
+    } catch (error) {
+      setGuiFeedback(error.message, "warn");
+      updateGuiRuntimeMeta();
+      if (!options?.quiet) renderGuiModal();
+      throw error;
+    }
+  }
+
+  async function loadGuiSettings() {
+    if (!state.gui.token) {
+      return null;
+    }
+    try {
+      state.gui.settings = await requestJson("/api/gui/llm/settings", { token: state.gui.token });
+      state.gui.draft = buildGuiDraft(state.gui.settings.masked_config);
+      state.gui.modelCatalogs = {};
+      state.gui.clearSecretFields = {};
+      state.gui.testResult = null;
+      state.gui.usageSummary = null;
+      setGuiFeedback("", "");
+      updateGuiRuntimeMeta();
+      renderGuiModal();
+      ensureActiveProviderModelCatalog();
+      loadGuiUsageSummary({ quiet: true });
+      return state.gui.settings;
+    } catch (error) {
+      if (error.status === 401) {
+        clearGuiSession();
+      }
+      setGuiFeedback(error.message, "warn");
+      updateGuiRuntimeMeta();
+      renderGuiModal();
+      throw error;
+    }
+  }
+
+  async function openGuiModal() {
+    els.llmOverlay.classList.remove("hidden");
+    renderGuiModal();
+    if (!state.gui.bootstrap) {
+      await loadGuiBootstrap({ quiet: true });
+    }
+    if (state.gui.token && state.gui.bootstrap?.auth_enabled) {
+      await loadGuiSettings();
+    } else {
+      renderGuiModal();
+    }
+  }
+
+  async function refreshProviderModels(providerId, options) {
+    if (!state.gui.token || !providerId || !state.gui.draft) return null;
+    const previous = getProviderCatalog(providerId);
+    state.gui.modelCatalogs[providerId] = {
+      ...previous,
+      loading: true,
+      error: "",
+    };
+    if (!options?.quiet) {
+      renderGuiModal();
+    }
+    try {
+      const payload = await requestJson(`/api/gui/llm/providers/${encodeURIComponent(providerId)}/models`, {
+        method: "POST",
+        token: state.gui.token,
+        body: buildGuiPayloadFromDraft(),
+      });
+      state.gui.modelCatalogs[providerId] = {
+        loading: false,
+        error: "",
+        source: payload.source || "",
+        models: Array.isArray(payload.models) ? payload.models : [],
+        count: Number(payload.count || 0),
+      };
+      if (!options?.quiet) {
+        setGuiFeedback(`${providerId} model catalog 已刷新。`, "ok");
+      }
+      renderGuiModal();
+      return payload;
+    } catch (error) {
+      if (error.status === 401) {
+        clearGuiSession();
+        setGuiFeedback(error.message, "warn");
+        renderGuiModal();
+        return null;
+      }
+      state.gui.modelCatalogs[providerId] = {
+        ...previous,
+        loading: false,
+        error: error.message,
+      };
+      if (!options?.quiet) {
+        setGuiFeedback(error.message, "warn");
+      }
+      renderGuiModal();
+      return null;
+    }
+  }
+
+  function ensureActiveProviderModelCatalog() {
+    const providerId = state.gui.draft?.analysis_provider;
+    if (!providerId || !state.gui.token) return;
+    const catalog = getProviderCatalog(providerId);
+    if (catalog.loading || (Array.isArray(catalog.models) && catalog.models.length) || catalog.error) {
+      return;
+    }
+    refreshProviderModels(providerId, { quiet: true }).catch(() => {
+      renderGuiModal();
+    });
+  }
+
+  async function loadGuiUsageSummary(options) {
+    if (!state.gui.token) return null;
+    try {
+      state.gui.usageSummary = await requestJson("/api/gui/llm/usage", { token: state.gui.token });
+      if (!options?.quiet) {
+        renderGuiModal();
+      }
+      return state.gui.usageSummary;
+    } catch (error) {
+      if (error.status === 401) {
+        clearGuiSession();
+      }
+      if (!options?.quiet) {
+        setGuiFeedback(error.message, "warn");
+        renderGuiModal();
+      }
+      return null;
+    }
+  }
+
+  async function syncGuiUsage(providerId) {
+    try {
+      await requestJson("/api/gui/llm/usage/sync", {
+        method: "POST",
+        token: state.gui.token,
+        body: providerId ? { provider: providerId } : {},
+      });
+      await loadGuiUsageSummary({ quiet: true });
+      setGuiFeedback(providerId ? `${providerId} usage sync completed.` : "Usage sync completed.", "ok");
+      renderGuiModal();
+    } catch (error) {
+      if (error.status === 401) {
+        clearGuiSession();
+      }
+      setGuiFeedback(error.message, "warn");
+      renderGuiModal();
+    }
+  }
+
+  function closeGuiModal() {
+    els.llmOverlay.classList.add("hidden");
+  }
+
+  function renderGuiMessageBlocks() {
+    const blocks = [];
+    const snapshot = currentGuiSnapshot();
+    if (snapshot?.config_error) {
+      blocks.push(`
+        <div class="llm-notice warn">
+          <div class="llm-notice-title">Config Warning</div>
+          <div class="llm-notice-text">${escapeHtml(snapshot.config_error)}</div>
+        </div>
+      `);
+    }
+    if (state.gui.feedback) {
+      blocks.push(`
+        <div class="llm-notice ${escapeHtml(state.gui.feedbackTone)}">
+          <div class="llm-notice-title">${state.gui.feedbackTone === "ok" ? "Saved" : "Notice"}</div>
+          <div class="llm-notice-text">${escapeHtml(state.gui.feedback)}</div>
+        </div>
+      `);
+    }
+    if (state.gui.testResult) {
+      blocks.push(`
+        <div class="llm-result ${state.gui.testResult.ok ? "ok" : "error"}">
+          <div class="llm-notice-title">Connectivity Test</div>
+          <div class="llm-result-text">${
+            state.gui.testResult.ok
+              ? `${escapeHtml(state.gui.testResult.provider)}/${escapeHtml(state.gui.testResult.model)} · ${escapeHtml(
+                  state.gui.testResult.response_preview || ""
+                )}`
+              : escapeHtml(state.gui.testResult.reason || "Provider test failed.")
+          }</div>
+        </div>
+      `);
+    }
+    return blocks.join("");
+  }
+
+  function renderProviderCard(providerId, providerMeta) {
+    const draftProvider = state.gui.draft?.providers?.[providerId] || {};
+    const providerSpec = providerFormSpecs[providerId];
+    const active = state.gui.draft?.analysis_provider === providerId;
+    const fields = providerSpec.fields
+      .map((field) => {
+        if (field.key === "model") {
+          return renderModelCatalogField(providerId, draftProvider);
+        }
+        if (!field.secret) {
+          return `
+            <label class="field-shell">
+              <span>${escapeHtml(field.label)}</span>
+              <input
+                type="${escapeHtml(field.type || "text")}"
+                value="${escapeHtml(draftProvider[field.key] || "")}"
+                placeholder="${escapeHtml(field.placeholder || "")}"
+                data-gui-provider="${escapeHtml(providerId)}"
+                data-gui-field="${escapeHtml(field.key)}"
+              />
+              ${field.envKey ? `<div class="field-meta">Maps to ${escapeHtml(field.envKey)}</div>` : ""}
+            </label>
+          `;
+        }
+
+        const secretStatus = getSecretStatus(providerId, field.key);
+        const clearing = isSecretClearing(providerId, field.key);
+        return `
+          <div class="secret-row">
+            <label class="field-shell">
+              <span>${escapeHtml(field.label)}</span>
+              <input
+                type="password"
+                value=""
+                placeholder="${escapeHtml(field.placeholder || "")}"
+                data-gui-provider="${escapeHtml(providerId)}"
+                data-gui-field="${escapeHtml(field.key)}"
+              />
+            </label>
+            <button
+              class="ghost-button compact"
+              type="button"
+              data-gui-clear-secret="${escapeHtml(providerId)}:${escapeHtml(field.key)}"
+            >
+              ${clearing ? "Undo Clear" : "Clear Saved"}
+            </button>
+          </div>
+          <div class="secret-meta">${
+            clearing
+              ? "将在保存时清除此已保存密钥，并回退到环境变量。"
+              : secretStatus.hasSecret
+              ? `已保存：${escapeHtml(secretStatus.masked || "已存在")}`
+              : "当前未检测到已保存密钥。"
+          }</div>
+        `;
+      })
+      .join("");
+    const usageDraft = getUsageDraft(providerId);
+    const usageSummary = getUsageSummary(providerId);
+    const usageMetricOptions = metricOptionsForProvider(providerId);
+    const usageMetric = usageDraft.metric_name || usageDefaults[providerId]?.metric_name || "total_tokens";
+    const usageMetricUnit = metricUnitForName(usageMetric);
+    const usageObserved = usageSummary?.observed || {};
+    const usageStatusText = usageSummary
+      ? usageObserved.value !== null && usageObserved.value !== undefined
+        ? `${formatMetricValue(usageObserved.value, usageObserved.metric_unit || usageDraft.metric_unit)} via ${
+            usageObserved.source || "local_events"
+          }`
+        : "No observed usage yet."
+      : "Usage summary not loaded.";
+    const remoteSyncSupported = providerId === "github" || providerId === "copilot";
+
+    return `
+      <section class="provider-card ${active ? "is-active" : ""}">
+        <div class="provider-card-head">
+          <div>
+            <div class="provider-card-label">${escapeHtml(providerMeta.label || providerSpec.label)}</div>
+            <h3>${escapeHtml(providerSpec.label)}</h3>
+          </div>
+          <div class="provider-card-head-actions">
+            ${active ? '<span class="provider-badge">Active</span>' : ""}
+          </div>
+        </div>
+        <div class="provider-card-hint">${escapeHtml(providerSpec.hint)}</div>
+        ${
+          providerId === "copilot"
+            ? `
+              <div class="provider-setup-note">
+                <div class="provider-setup-title">Copilot Config In GUI</div>
+                <div class="provider-setup-text">
+                  这里保存的就是 <code>COPILOT_MODEL</code> 和 <code>COPILOT_NODE_BINARY</code> 对应配置。
+                  真正授权仍来自当前机器上的 Copilot CLI 登录态，不是网页 OAuth。
+                </div>
+                <div class="provider-setup-list">
+                  <div><strong>1.</strong> Model 设为你想用的 Copilot 模型，例如 <code>gpt-4.1</code></div>
+                  <div><strong>2.</strong> Node Binary 默认保持 <code>node</code>，只有本机命令名不同才改</div>
+                  <div><strong>3.</strong> 本机先执行 <code>npm install -g @github/copilot</code></div>
+                  <div><strong>4.</strong> 然后运行 <code>copilot</code> 并按提示完成 <code>/login</code></div>
+                  <div><strong>5.</strong> 保存后把 Active Provider 切到 <code>copilot</code>，再点 <code>Test Active Provider</code></div>
+                </div>
+              </div>
+            `
+            : ""
+        }
+        <div class="llm-stack">
+          ${fields}
+          <div class="usage-shell">
+            <div class="provider-card-meta">
+              <div>
+                <div class="provider-card-label">Usage Monitoring</div>
+                <div class="secret-meta">${escapeHtml(usageStatusText)}</div>
+              </div>
+              ${remoteSyncSupported ? `<button class="ghost-button compact" type="button" data-gui-usage-sync="${escapeHtml(providerId)}">Sync Usage</button>` : ""}
+            </div>
+            <div class="usage-status-grid">
+              <div class="usage-status-card">
+                <span>Current</span>
+                <strong>${escapeHtml(
+                  usageObserved.value !== null && usageObserved.value !== undefined
+                    ? formatMetricValue(usageObserved.value, usageObserved.metric_unit || usageMetricUnit)
+                    : "N/A"
+                )}</strong>
+              </div>
+              <div class="usage-status-card">
+                <span>Limit</span>
+                <strong>${escapeHtml(formatMetricValue(usageDraft.limit_value || 0, usageMetricUnit))}</strong>
+              </div>
+              <div class="usage-status-card">
+                <span>Used</span>
+                <strong>${escapeHtml(
+                  usageSummary?.percent_used !== null && usageSummary?.percent_used !== undefined
+                    ? `${usageSummary.percent_used}%`
+                    : "N/A"
+                )}</strong>
+              </div>
+              <div class="usage-status-card">
+                <span>Last Alert</span>
+                <strong>${escapeHtml(
+                  usageSummary?.latest_alert?.threshold_percent !== undefined
+                    ? `${usageSummary.latest_alert.threshold_percent}%`
+                    : "None"
+                )}</strong>
+              </div>
+            </div>
+            <div class="llm-inline-grid">
+              <label class="field-shell">
+                <span>Tracking</span>
+                <select data-gui-usage-provider="${escapeHtml(providerId)}" data-gui-usage-field="enabled">
+                  <option value="false"${usageDraft.enabled ? "" : " selected"}>Off</option>
+                  <option value="true"${usageDraft.enabled ? " selected" : ""}>On</option>
+                </select>
+              </label>
+              <label class="field-shell">
+                <span>Alerts</span>
+                <select data-gui-usage-provider="${escapeHtml(providerId)}" data-gui-usage-field="alert_enabled">
+                  <option value="false"${usageDraft.alert_enabled ? "" : " selected"}>Off</option>
+                  <option value="true"${usageDraft.alert_enabled ? " selected" : ""}>On</option>
+                </select>
+              </label>
+              <label class="field-shell">
+                <span>Metric</span>
+                <select data-gui-usage-provider="${escapeHtml(providerId)}" data-gui-usage-field="metric_name">
+                  ${usageMetricOptions
+                    .map(
+                      (option) => `
+                        <option value="${escapeHtml(option.value)}"${option.value === usageMetric ? " selected" : ""}>${escapeHtml(option.label)}</option>
+                      `
+                    )
+                    .join("")}
+                </select>
+              </label>
+              <label class="field-shell">
+                <span>Total Limit</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value="${escapeHtml(String(usageDraft.limit_value || 0))}"
+                  data-gui-usage-provider="${escapeHtml(providerId)}"
+                  data-gui-usage-field="limit_value"
+                />
+              </label>
+            </div>
+            <div class="llm-inline-grid">
+              <label class="field-shell">
+                <span>Threshold %</span>
+                <input
+                  type="text"
+                  value="${escapeHtml((usageDraft.threshold_percentages || []).join(","))}"
+                  placeholder="50,80,90,100"
+                  data-gui-usage-provider="${escapeHtml(providerId)}"
+                  data-gui-usage-field="threshold_percentages"
+                />
+              </label>
+              <label class="field-shell">
+                <span>Usage Source</span>
+                <select data-gui-usage-provider="${escapeHtml(providerId)}" data-gui-usage-field="prefer_provider_api">
+                  <option value="false"${usageDraft.prefer_provider_api ? "" : " selected"}>Local Events</option>
+                  <option value="true"${usageDraft.prefer_provider_api ? " selected" : ""}>Provider API First</option>
+                </select>
+              </label>
+              ${
+                remoteSyncSupported
+                  ? `
+                    <label class="field-shell">
+                      <span>Billing Actor Type</span>
+                      <select data-gui-usage-provider="${escapeHtml(providerId)}" data-gui-usage-field="billing_actor_type">
+                        <option value="user"${usageDraft.billing_actor_type === "user" ? " selected" : ""}>User</option>
+                        <option value="org"${usageDraft.billing_actor_type === "org" ? " selected" : ""}>Organization</option>
+                      </select>
+                    </label>
+                    <label class="field-shell">
+                      <span>Billing Actor</span>
+                      <input
+                        type="text"
+                        value="${escapeHtml(usageDraft.billing_actor || "")}"
+                        placeholder="GitHub username or org"
+                        data-gui-usage-provider="${escapeHtml(providerId)}"
+                        data-gui-usage-field="billing_actor"
+                      />
+                    </label>
+                  `
+                  : ""
+              }
+            </div>
+            ${
+              remoteSyncSupported
+                ? `
+                  <label class="field-shell">
+                    <span>Billing Token</span>
+                    <input
+                      type="password"
+                      value=""
+                      placeholder="Optional; blank keeps saved token or falls back when supported"
+                      data-gui-usage-provider="${escapeHtml(providerId)}"
+                      data-gui-usage-field="billing_token"
+                    />
+                  </label>
+                  <div class="secret-meta">${
+                    usageDraft.has_billing_token
+                      ? `Saved billing token: ${escapeHtml(usageDraft.billing_token_masked || "present")}`
+                      : "No saved billing token."
+                  }</div>
+                `
+                : `<div class="secret-meta">This provider currently uses real response usage captured by SEC Monitor. No official account-level sync is wired here.</div>`
+            }
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderGuiLocked() {
+    return `
+      <div class="llm-stack">
+        ${renderGuiMessageBlocks()}
+        <section class="pref-card">
+          <div class="pref-title-row">
+            <h3>Unlock Settings</h3>
+            <div class="detail-meta">所有 GUI provider 配置都会加密后写入数据库。</div>
+          </div>
+          <div class="llm-auth-row">
+            <label class="field-shell">
+              <span>GUI / Admin Password</span>
+              <input
+                id="gui-admin-password"
+                type="password"
+                value="${escapeHtml(state.gui.pendingPassword || "")}"
+                placeholder="输入 GUI_ADMIN_PASSWORD 或 bootstrap admin 密码"
+              />
+            </label>
+            <button class="detail-trigger" data-gui-login type="button">Unlock</button>
+          </div>
+          <div class="llm-muted">先在服务端设置 <code>GUI_ADMIN_PASSWORD</code>，然后用它或当前 bootstrap admin 密码解锁控制面板。</div>
+        </section>
+      </div>
+    `;
+  }
+
+  function renderGuiDisabled() {
+    return `
+      <div class="llm-stack">
+        ${renderGuiMessageBlocks()}
+        <div class="llm-notice warn">
+          <div class="llm-notice-title">GUI Auth Disabled</div>
+          <div class="llm-notice-text">
+            当前服务端还没有设置 GUI 管理密码。先在 <code>.env</code> 里配置 <code>GUI_ADMIN_PASSWORD</code>，
+            然后重启 API，页面里的 LLM 控制面板才会启用。
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderGuiUnlocked() {
+    const bootstrap = state.gui.bootstrap || { providers: [] };
+    const current = state.gui.settings?.current || bootstrap.current || {};
+    return `
+      <div class="llm-stack">
+        ${renderGuiMessageBlocks()}
+        <section class="pref-card">
+          <div class="pref-title-row">
+            <h3>Runtime</h3>
+            <div class="detail-meta">当前生效 provider 与 GUI 存储状态</div>
+          </div>
+          <div class="llm-runtime-grid">
+            <label class="field-shell">
+              <span>Active Provider</span>
+              <select data-gui-top="analysis_provider">
+                ${bootstrap.providers
+                  .map(
+                    (provider) => `
+                      <option value="${escapeHtml(provider.id)}"${
+                        provider.id === state.gui.draft.analysis_provider ? " selected" : ""
+                      }>${escapeHtml(provider.label)}</option>
+                    `
+                  )
+                  .join("")}
+              </select>
+            </label>
+            <label class="field-shell">
+              <span>Temperature</span>
+              <input type="number" step="0.1" min="0" max="2" value="${escapeHtml(
+                String(state.gui.draft.analysis_temperature)
+              )}" data-gui-top="analysis_temperature" />
+            </label>
+            <label class="field-shell">
+              <span>Max Tokens</span>
+              <input type="number" min="1" step="1" value="${escapeHtml(
+                String(state.gui.draft.analysis_max_tokens)
+              )}" data-gui-top="analysis_max_tokens" />
+            </label>
+            <label class="field-shell">
+              <span>Timeout Seconds</span>
+              <input type="number" min="1" step="1" value="${escapeHtml(
+                String(state.gui.draft.analysis_timeout_seconds)
+              )}" data-gui-top="analysis_timeout_seconds" />
+            </label>
+          </div>
+          <div class="provider-card-hint">
+            当前运行中：${escapeHtml(current.provider || "n/a")}/${escapeHtml(current.model || "unconfigured")} · ${
+              current.available ? "provider ready" : escapeHtml(current.reason || "provider unavailable")
+            }
+          </div>
+        </section>
+
+        <section class="pref-card">
+          <div class="pref-title-row">
+            <h3>Provider Credentials</h3>
+            <div class="detail-meta">可以预先保存多个 provider，只切换 active provider 即可生效。</div>
+          </div>
+          <div class="llm-provider-grid">
+            ${bootstrap.providers.map((provider) => renderProviderCard(provider.id, provider)).join("")}
+          </div>
+        </section>
+
+        <section class="pref-card">
+          <div class="llm-actions">
+            <button class="ghost-button" data-gui-test type="button">Test Active Provider</button>
+            <button class="detail-trigger" data-gui-save type="button">Save Settings</button>
+            <button class="ghost-button compact" data-gui-logout type="button">Lock Panel</button>
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
+  function renderGuiModal() {
+    updateGuiRuntimeMeta();
+    if (!state.gui.bootstrap) {
+      els.llmBody.innerHTML = '<div class="empty-state">正在加载 LLM 控制台配置…</div>';
+      return;
+    }
+    if (!state.gui.bootstrap.auth_enabled) {
+      els.llmBody.innerHTML = renderGuiDisabled();
+      return;
+    }
+    if (!state.gui.token) {
+      els.llmBody.innerHTML = renderGuiLocked();
+      return;
+    }
+    if (!state.gui.settings || !state.gui.draft) {
+      els.llmBody.innerHTML = '<div class="empty-state">正在解密并读取已保存的 GUI 设置…</div>';
+      return;
+    }
+    els.llmBody.innerHTML = renderGuiUnlocked();
+  }
+
+  async function loginGui() {
+    const password = String(state.gui.pendingPassword || "").trim();
+    if (!password) {
+      setGuiFeedback("请输入 GUI_ADMIN_PASSWORD。", "warn");
+      renderGuiModal();
+      return;
+    }
+    try {
+      const payload = await requestJson("/api/gui/auth/login", {
+        method: "POST",
+        body: { password },
+      });
+      state.gui.token = payload.token;
+      saveGuiToken(payload.token);
+      state.gui.pendingPassword = "";
+      setGuiFeedback("GUI 管理会话已解锁。", "ok");
+      await loadGuiSettings();
+    } catch (error) {
+      setGuiFeedback(error.message, "warn");
+      renderGuiModal();
+    }
+  }
+
+  async function saveGuiSettings() {
+    try {
+      const payload = await requestJson("/api/gui/llm/settings", {
+        method: "PUT",
+        token: state.gui.token,
+        body: buildGuiPayloadFromDraft(),
+      });
+      state.gui.settings = {
+        ...(state.gui.settings || {}),
+        ...payload,
+        masked_config: payload.masked_config,
+      };
+      state.gui.bootstrap = {
+        ...(state.gui.bootstrap || {}),
+        current: payload.current,
+        runtime_source: payload.runtime_source,
+        config_error: payload.config_error || null,
+      };
+      state.gui.draft = buildGuiDraft(payload.masked_config);
+      state.gui.clearSecretFields = {};
+      state.gui.testResult = null;
+      await loadGuiUsageSummary({ quiet: true });
+      setGuiFeedback(`已保存 GUI LLM 设置，当前运行源为 ${payload.runtime_source}。`, "ok");
+      renderGuiModal();
+      await loadAll();
+    } catch (error) {
+      if (error.status === 401) {
+        clearGuiSession();
+      }
+      setGuiFeedback(error.message, "warn");
+      renderGuiModal();
+    }
+  }
+
+  async function testGuiSettings() {
+    try {
+      state.gui.testResult = await requestJson("/api/gui/llm/settings/test", {
+        method: "POST",
+        token: state.gui.token,
+        body: buildGuiPayloadFromDraft(),
+      });
+      renderGuiModal();
+    } catch (error) {
+      if (error.status === 401) {
+        clearGuiSession();
+      }
+      setGuiFeedback(error.message, "warn");
+      renderGuiModal();
+    }
+  }
+
   function applyTheme(themeId) {
     state.prefs.theme = themeId || "all";
     savePrefs();
@@ -1159,6 +2277,147 @@
       executeCommand(button.getAttribute("data-command-type"), button.getAttribute("data-command-id"));
     });
 
+    els.llmSettingsOpen.addEventListener("click", () => {
+      openGuiModal().catch((error) => {
+        setGuiFeedback(error.message, "warn");
+        renderGuiModal();
+      });
+    });
+    els.llmClose.addEventListener("click", closeGuiModal);
+    els.llmOverlay.addEventListener("click", (event) => {
+      if (event.target === els.llmOverlay) {
+        closeGuiModal();
+      }
+    });
+    els.llmBody.addEventListener("input", (event) => {
+      const target = event.target;
+      if (target.id === "gui-admin-password") {
+        state.gui.pendingPassword = target.value;
+        return;
+      }
+      const topField = target.getAttribute("data-gui-top");
+      if (topField && state.gui.draft) {
+        state.gui.draft[topField] = target.value;
+        if (topField === "analysis_provider") {
+          renderGuiModal();
+          ensureActiveProviderModelCatalog();
+        }
+        return;
+      }
+      const providerModelSelect = target.getAttribute("data-gui-model-select");
+      if (providerModelSelect) {
+        const providerId = target.getAttribute("data-gui-provider");
+        if (providerId && state.gui.draft?.providers?.[providerId] && target.value !== "__custom__") {
+          state.gui.draft.providers[providerId].model = target.value;
+          renderGuiModal();
+        }
+        return;
+      }
+      const usageProviderId = target.getAttribute("data-gui-usage-provider");
+      const usageField = target.getAttribute("data-gui-usage-field");
+      if (usageProviderId && usageField && state.gui.draft?.usage_monitoring?.providers?.[usageProviderId]) {
+        let nextValue = target.value;
+        if (["enabled", "alert_enabled", "prefer_provider_api"].includes(usageField)) {
+          nextValue = String(target.value) === "true";
+        } else if (usageField === "limit_value") {
+          nextValue = Number(target.value || 0);
+        } else if (usageField === "threshold_percentages") {
+          nextValue = String(target.value || "")
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean)
+            .map((item) => Number(item))
+            .filter((item) => Number.isFinite(item) && item > 0);
+        }
+        state.gui.draft.usage_monitoring.providers[usageProviderId][usageField] = nextValue;
+        if (usageField === "metric_name") {
+          state.gui.draft.usage_monitoring.providers[usageProviderId].metric_unit = metricUnitForName(String(nextValue || ""));
+          renderGuiModal();
+        }
+        return;
+      }
+      const providerId = target.getAttribute("data-gui-provider");
+      const field = target.getAttribute("data-gui-field");
+      if (providerId && field && state.gui.draft?.providers?.[providerId]) {
+        state.gui.draft.providers[providerId][field] = target.value;
+        if (target.value.trim()) {
+          state.gui.clearSecretFields[providerId] = state.gui.clearSecretFields[providerId] || {};
+          state.gui.clearSecretFields[providerId][field] = false;
+        }
+        if (["api_key", "base_url", "api_version", "org", "token", "node_binary"].includes(field)) {
+          delete state.gui.modelCatalogs[providerId];
+        }
+      }
+    });
+    els.llmBody.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && event.target.id === "gui-admin-password") {
+        event.preventDefault();
+        loginGui();
+      }
+    });
+    els.llmBody.addEventListener("change", (event) => {
+      const target = event.target;
+      const providerId = target.getAttribute("data-gui-provider");
+      if (!providerId || !target.getAttribute("data-gui-model-select")) {
+        return;
+      }
+      if (state.gui.draft?.providers?.[providerId] && target.value !== "__custom__") {
+        state.gui.draft.providers[providerId].model = target.value;
+        renderGuiModal();
+      }
+    });
+    els.llmBody.addEventListener("click", (event) => {
+      const loginButton = event.target.closest("[data-gui-login]");
+      if (loginButton) {
+        loginGui();
+        return;
+      }
+      const saveButton = event.target.closest("[data-gui-save]");
+      if (saveButton) {
+        saveGuiSettings();
+        return;
+      }
+      const testButton = event.target.closest("[data-gui-test]");
+      if (testButton) {
+        testGuiSettings();
+        return;
+      }
+      const logoutButton = event.target.closest("[data-gui-logout]");
+      if (logoutButton) {
+        clearGuiSession();
+        setGuiFeedback("GUI 管理会话已锁定。", "ok");
+        renderGuiModal();
+        return;
+      }
+      const clearSecretButton = event.target.closest("[data-gui-clear-secret]");
+      if (clearSecretButton) {
+        const [providerId, field] = String(clearSecretButton.getAttribute("data-gui-clear-secret") || "").split(":");
+        if (!providerId || !field) return;
+        state.gui.clearSecretFields[providerId] = state.gui.clearSecretFields[providerId] || {};
+        state.gui.clearSecretFields[providerId][field] = !state.gui.clearSecretFields[providerId][field];
+        if (state.gui.draft?.providers?.[providerId]) {
+          state.gui.draft.providers[providerId][field] = "";
+        }
+        delete state.gui.modelCatalogs[providerId];
+        renderGuiModal();
+        return;
+      }
+      const refreshModelsButton = event.target.closest("[data-gui-refresh-models]");
+      if (refreshModelsButton) {
+        const providerId = String(refreshModelsButton.getAttribute("data-gui-refresh-models") || "").trim();
+        if (!providerId) return;
+        refreshProviderModels(providerId);
+        renderGuiModal();
+        return;
+      }
+      const syncUsageButton = event.target.closest("[data-gui-usage-sync]");
+      if (syncUsageButton) {
+        const providerId = String(syncUsageButton.getAttribute("data-gui-usage-sync") || "").trim();
+        syncGuiUsage(providerId || null);
+        return;
+      }
+    });
+
     document.addEventListener("keydown", (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -1177,6 +2436,7 @@
       if (event.key === "Escape") {
         closeDetail();
         closeCommandModal();
+        closeGuiModal();
       }
     });
   }

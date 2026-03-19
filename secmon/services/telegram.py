@@ -5,6 +5,7 @@ import logging
 import re
 from dataclasses import dataclass
 from html import escape
+from typing import TYPE_CHECKING
 
 import requests
 from sqlalchemy import func, select
@@ -23,6 +24,9 @@ from ..models import (
 )
 from ..watchlist import SEC_ITEM_NOTES_YUE, TICKER_NAMES, WATCHLIST
 from .analysis import BaseAnalysisService, build_analysis_service
+
+if TYPE_CHECKING:
+    from .llm_usage import LlmUsageService
 
 
 logger = logging.getLogger(__name__)
@@ -253,6 +257,67 @@ class TelegramNotifier:
         detail = "; ".join(failures) if failures else "No recipient accepted the message."
         raise RuntimeError(detail)
 
+    def send_system_notice(
+        self,
+        db: Session,
+        *,
+        title: str,
+        body_lines: list[str],
+        metadata: dict | None = None,
+    ) -> int:
+        if not self.available:
+            raise RuntimeError("Telegram notifier is not configured.")
+
+        recipients = self._resolve_recipients(db)
+        if not recipients:
+            raise RuntimeError("No Telegram recipients are configured.")
+
+        message = (
+            f"<b>{escape(title)}</b>\n"
+            + "\n".join(escape(line) for line in body_lines if str(line).strip())
+        ).strip()
+
+        delivered = 0
+        failures: list[str] = []
+        for chat in recipients:
+            try:
+                response = self.client.send_message(
+                    chat_id=chat.telegram_chat_id,
+                    text=message,
+                    parse_mode="HTML",
+                )
+            except Exception as exc:
+                failures.append(f"{chat.telegram_chat_id}:{exc}")
+                if "403" in str(exc):
+                    chat.is_blocked = True
+                continue
+
+            chat.last_outbound_at = utc_now()
+            db.add(
+                TelegramMessage(
+                    chat_id=chat.id,
+                    telegram_message_id=str(response.get("message_id", "")) or None,
+                    direction="outbound",
+                    role="assistant",
+                    command_name="system_notice",
+                    content=message,
+                    provider="sec_monitor",
+                    model="system_notice",
+                    message_metadata={
+                        "kind": "system_notice",
+                        **(metadata or {}),
+                    },
+                )
+            )
+            delivered += 1
+
+        db.flush()
+        if delivered:
+            return delivered
+
+        detail = "; ".join(failures) if failures else "No recipient accepted the message."
+        raise RuntimeError(detail)
+
     def _resolve_recipients(self, db: Session) -> list[TelegramChat]:
         recipients = db.execute(
             select(TelegramChat)
@@ -326,10 +391,16 @@ class TelegramNotifier:
 
 
 class TelegramAssistantService:
-    def __init__(self, settings: Settings, analysis_service: BaseAnalysisService | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        analysis_service: BaseAnalysisService | None = None,
+        usage_service: LlmUsageService | None = None,
+    ) -> None:
         self.settings = settings
         self.client = TelegramBotClient(settings)
         self.analysis_service = analysis_service or build_analysis_service(settings)
+        self.usage_service = usage_service
         self.available = self.client.available and settings.telegram_assistant_enabled
 
     def sync_updates_once(self) -> dict:
@@ -571,6 +642,16 @@ class TelegramAssistantService:
                 user_prompt=prompt,
             )
             answer = completion.text.strip()
+            if self.usage_service is not None:
+                self.usage_service.record_usage(
+                    db,
+                    provider=completion.provider,
+                    model=completion.model,
+                    feature="telegram_assistant",
+                    usage=completion.usage,
+                    raw_payload=completion.raw_payload,
+                    metadata={"chat_id": chat.id, "filing_ids": [filing.id for filing in filings]},
+                )
         except Exception as exc:
             logger.exception("Telegram assistant LLM request failed")
             answer = (

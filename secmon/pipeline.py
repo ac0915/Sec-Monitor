@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -10,8 +11,24 @@ from sqlalchemy.orm import Session, selectinload
 
 from .config import get_settings
 from .database import SessionLocal, init_db
-from .models import AnalysisResult, Filing, FilingChunk, IngestionRun, TelegramChat, utc_now
+from .models import (
+    AnalysisResult,
+    EvaluationRun,
+    Filing,
+    FilingChunk,
+    FilingChunkEmbedding,
+    IngestionRun,
+    LabelTask,
+    PriceIngestionRun,
+    PriceSnapshot,
+    TelegramChat,
+    utc_now,
+)
 from .services.analysis import build_analysis_service
+from .services.auth import AuthPrincipal
+from .services.embeddings import build_embedding_service
+from .services.evaluation import EvaluationService
+from .services.gui_settings import GuiSettingsService
 from .services.intelligence import (
     build_feed_facets,
     build_sec_brief,
@@ -22,6 +39,9 @@ from .services.intelligence import (
     compute_filing_signal_score,
     filter_feed_filings,
 )
+from .services.llm_usage import LlmUsageService
+from .services.labeling import LabelingService
+from .services.prices import build_price_service
 from .services.sec_client import FilingCandidate, SECClient
 from .services.telegram import TelegramAssistantService, TelegramNotifier
 from .watchlist import WATCHLIST
@@ -65,12 +85,27 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
 class IngestionService:
     def __init__(self) -> None:
         self.settings = get_settings()
+        self.gui_settings = GuiSettingsService(self.settings)
+        self.effective_settings = self.settings
+        self.analysis_runtime_source = "env"
+        self.analysis_runtime_error: str | None = None
         self.sec_client = SECClient(self.settings)
         self.analysis_service = build_analysis_service(self.settings)
+        self.embedding_service = build_embedding_service(self.settings)
+        self.price_service = build_price_service(self.settings)
+        self.llm_usage_service = LlmUsageService(self.settings, self.gui_settings.load_runtime_config)
         self.telegram = TelegramNotifier(self.settings)
-        self.telegram_assistant = TelegramAssistantService(self.settings, analysis_service=self.analysis_service)
+        self.telegram_assistant = TelegramAssistantService(
+            self.settings,
+            analysis_service=self.analysis_service,
+            usage_service=self.llm_usage_service,
+        )
+        self.labeling_service = LabelingService(self.settings)
+        self.evaluation_service = EvaluationService(self.settings, self.analysis_service, self.llm_usage_service)
+        self._refresh_runtime_services()
 
     def ingest_once(self) -> dict:
+        self._refresh_runtime_services()
         init_db()
         with SessionLocal() as db:
             run = IngestionRun(status="running")
@@ -90,6 +125,8 @@ class IngestionService:
                     "new_filings": 0,
                     "updated_filings": 0,
                     "analyzed_filings": 0,
+                    "price_quotes": 0,
+                    "price_sync_error": None,
                 }
 
                 for candidate in candidates:
@@ -126,6 +163,14 @@ class IngestionService:
                         self._send_telegram(db, filing)
 
                     db.commit()
+
+                if self.settings.auto_sync_prices_on_ingest and self.price_service.available:
+                    try:
+                        price_stats = self.sync_prices_once()
+                        stats["price_quotes"] = price_stats["stored_quotes"]
+                    except Exception as exc:
+                        logger.warning("Price sync failed during ingestion: %s", exc)
+                        stats["price_sync_error"] = str(exc)
 
                 run.status = "completed"
                 run.new_filings = stats["new_filings"]
@@ -187,12 +232,187 @@ class IngestionService:
         return count
 
     def sync_telegram_once(self) -> dict:
+        self._refresh_runtime_services()
         return self.telegram_assistant.sync_updates_once()
 
     def process_telegram_update(self, update: dict) -> dict:
+        self._refresh_runtime_services()
         return self.telegram_assistant.process_update_payload(update)
 
+    def sync_llm_usage_once(self, *, provider: str | None = None) -> dict:
+        self._refresh_runtime_services()
+        return self.llm_usage_service.sync_provider_usage_once(provider)
+
+    def sync_prices_once(self, *, tickers: tuple[str, ...] = ()) -> dict:
+        init_db()
+        watchlist = list(dict.fromkeys([ticker.upper() for ticker in (tickers or tuple(WATCHLIST))]))
+        if not self.price_service.available:
+            raise RuntimeError(self.price_service.unavailable_reason)
+
+        with SessionLocal() as db:
+            run = PriceIngestionRun(provider=self.price_service.provider_name, status="running", requested_tickers=len(watchlist))
+            db.add(run)
+            db.commit()
+            db.refresh(run)
+
+            try:
+                quotes = self.price_service.fetch_quotes(watchlist)
+                quotes_by_ticker = {quote.ticker: quote for quote in quotes}
+                stored = 0
+                for ticker in watchlist:
+                    quote = quotes_by_ticker.get(ticker)
+                    if quote is None:
+                        continue
+                    db.add(
+                        PriceSnapshot(
+                            ticker=quote.ticker,
+                            provider=quote.provider,
+                            currency=quote.currency,
+                            exchange=quote.exchange,
+                            market_state=quote.market_state,
+                            regular_market_price=quote.regular_market_price,
+                            previous_close=quote.previous_close,
+                            change_amount=quote.change_amount,
+                            change_percent=quote.change_percent,
+                            day_low=quote.day_low,
+                            day_high=quote.day_high,
+                            volume=quote.volume,
+                            market_cap=quote.market_cap,
+                            source_payload=quote.raw_payload,
+                        )
+                    )
+                    stored += 1
+
+                run.status = "completed"
+                run.successful_tickers = stored
+                run.failed_tickers = max(0, len(watchlist) - stored)
+                run.completed_at = utc_now()
+                db.commit()
+                return {
+                    "provider": self.price_service.provider_name,
+                    "requested_tickers": len(watchlist),
+                    "stored_quotes": stored,
+                    "failed_tickers": run.failed_tickers,
+                }
+            except Exception as exc:
+                logger.exception("Price sync failed")
+                run.status = "failed"
+                run.error_message = str(exc)
+                run.failed_tickers = len(watchlist)
+                run.completed_at = utc_now()
+                db.commit()
+                raise
+
+    def latest_prices_snapshot(self, *, limit: int = 50, tickers: tuple[str, ...] = ()) -> dict:
+        init_db()
+        ticker_filter = {ticker.upper() for ticker in tickers}
+        with SessionLocal() as db:
+            snapshots = db.execute(
+                select(PriceSnapshot)
+                .order_by(PriceSnapshot.fetched_at.desc())
+                .limit(max(limit * 10, limit))
+            ).scalars().all()
+
+            latest_by_ticker: dict[str, PriceSnapshot] = {}
+            for snapshot in snapshots:
+                if ticker_filter and snapshot.ticker not in ticker_filter:
+                    continue
+                if snapshot.ticker in latest_by_ticker:
+                    continue
+                latest_by_ticker[snapshot.ticker] = snapshot
+                if len(latest_by_ticker) >= limit:
+                    break
+
+            return {
+                "prices": [serialize_price_snapshot(snapshot) for snapshot in latest_by_ticker.values()],
+            }
+
+    def embed_chunks_once(self, *, limit: int = 32) -> dict:
+        self._refresh_runtime_services()
+        if not self.embedding_service.available:
+            raise RuntimeError(self.embedding_service.unavailable_reason)
+
+        init_db()
+        processed = 0
+        failed = 0
+
+        with SessionLocal() as db:
+            chunks = db.execute(
+                select(FilingChunk)
+                .order_by(FilingChunk.created_at.asc())
+                .limit(max(limit * 4, limit))
+            ).scalars().all()
+
+            for chunk in chunks:
+                content_hash = hashlib.sha256(chunk.content.encode("utf-8")).hexdigest()
+                existing = db.execute(
+                    select(FilingChunkEmbedding).where(
+                        FilingChunkEmbedding.chunk_id == chunk.id,
+                        FilingChunkEmbedding.provider == self.embedding_service.provider_name,
+                        FilingChunkEmbedding.model == self.embedding_service.selected_model,
+                    )
+                ).scalar_one_or_none()
+                if existing and existing.status == "completed" and existing.content_hash == content_hash:
+                    continue
+
+                target = existing or FilingChunkEmbedding(
+                    chunk_id=chunk.id,
+                    provider=self.embedding_service.provider_name,
+                    model=self.embedding_service.selected_model,
+                    content_hash=content_hash,
+                )
+                if existing is None:
+                    db.add(target)
+                target.status = "running"
+                target.content_hash = content_hash
+                target.error_message = None
+                db.flush()
+
+                try:
+                    payload = self.embedding_service.embed_text(chunk.content)
+                    target.status = "completed"
+                    target.vector = payload.vector
+                    target.dimensions = payload.dimensions
+                    target.raw_payload = payload.raw_payload
+                    processed += 1
+                except Exception as exc:
+                    target.status = "failed"
+                    target.error_message = str(exc)
+                    failed += 1
+
+                db.flush()
+                if processed + failed >= limit:
+                    break
+
+            db.commit()
+            return {
+                "provider": self.embedding_service.provider_name,
+                "model": self.embedding_service.selected_model,
+                "processed": processed,
+                "failed": failed,
+            }
+
+    def seed_label_tasks(self, *, limit: int, principal: AuthPrincipal | None = None) -> dict:
+        return self.labeling_service.seed_tasks(limit=limit, principal=principal)
+
+    def list_label_tasks(self, *, status: str = "open", limit: int = 50) -> dict:
+        return self.labeling_service.list_tasks(status=status, limit=limit)
+
+    def submit_label(self, *, task_id: int, payload: dict, principal: AuthPrincipal) -> dict:
+        return self.labeling_service.submit_label(principal, task_id=task_id, payload=payload)
+
+    def run_evaluation(self, *, limit: int, principal: AuthPrincipal | None = None) -> dict:
+        self._refresh_runtime_services()
+        return self.evaluation_service.run_evaluation(limit=limit, principal=principal)
+
+    def list_evaluation_runs(self, *, limit: int = 20) -> dict:
+        return self.evaluation_service.list_runs(limit=limit)
+
+    def latest_evaluation_run(self) -> dict | None:
+        return self.evaluation_service.latest_run()
+
     def dashboard_snapshot(self) -> dict:
+        self._refresh_runtime_services()
         init_db()
         with SessionLocal() as db:
             filings = db.execute(
@@ -208,8 +428,16 @@ class IngestionService:
                 .order_by(Filing.published_at.desc())
             ).scalars().all()
             runs = db.execute(select(IngestionRun).order_by(IngestionRun.started_at.desc()).limit(10)).scalars().all()
+            price_runs = db.execute(
+                select(PriceIngestionRun).order_by(PriceIngestionRun.started_at.desc()).limit(5)
+            ).scalars().all()
             chunk_count = db.scalar(select(func.count(FilingChunk.id))) or 0
+            embedding_count = db.scalar(select(func.count(FilingChunkEmbedding.id))) or 0
             analyzed_count = db.scalar(select(func.count(AnalysisResult.id))) or 0
+            label_task_open = db.scalar(select(func.count(LabelTask.id)).where(LabelTask.status == "open")) or 0
+            latest_eval = db.execute(
+                select(EvaluationRun).order_by(EvaluationRun.started_at.desc()).limit(1)
+            ).scalar_one_or_none()
             telegram_subscribers = db.scalar(
                 select(func.count(TelegramChat.id)).where(TelegramChat.alerts_enabled.is_(True))
             ) or 0
@@ -245,6 +473,8 @@ class IngestionService:
                     "provider": self.analysis_service.provider_name,
                     "model": self.analysis_service.selected_model,
                     "available": self.analysis_service.available,
+                    "runtime_source": self.analysis_runtime_source,
+                    "runtime_error": self.analysis_runtime_error,
                 },
                 "telegram": {
                     "bot_available": self.telegram.available,
@@ -267,8 +497,20 @@ class IngestionService:
                     "filings": len(all_filings),
                     "analyzed": analyzed_count,
                     "chunks": chunk_count,
+                    "embeddings": embedding_count,
                     "raw_text_ready": len([filing for filing in all_filings if filing.raw_document_text]),
                 },
+                "prices": {
+                    "provider": self.price_service.provider_name,
+                    "available": self.price_service.available,
+                    "latest_quotes": self.latest_prices_snapshot(limit=10)["prices"],
+                    "recent_runs": [serialize_price_run(run) for run in price_runs],
+                },
+                "llm_usage": self.llm_usage_service.summary_payload(),
+                "labels": {
+                    "open_tasks": label_task_open,
+                },
+                "evaluation": serialize_evaluation_run(latest_eval) if latest_eval else None,
                 "tier_counts": tier_counts,
                 "sentiment_counts": sentiment_counts,
                 "daily_counts": [
@@ -283,6 +525,29 @@ class IngestionService:
                 "last_run": serialize_run(runs[0]) if runs else None,
                 "recent_runs": [serialize_run(run) for run in runs],
             }
+
+    def _refresh_runtime_services(self) -> None:
+        try:
+            runtime_config = self.gui_settings.load_runtime_config()
+            self.effective_settings = self.gui_settings.apply_runtime_settings(self.settings, runtime_config)
+            self.analysis_runtime_source = "gui" if runtime_config else "env"
+            self.analysis_runtime_error = None
+        except Exception as exc:
+            logger.warning("Falling back to env-based analysis settings because GUI runtime config failed to load: %s", exc)
+            self.effective_settings = self.settings
+            self.analysis_runtime_source = "env"
+            self.analysis_runtime_error = str(exc)
+
+        self.analysis_service = build_analysis_service(self.effective_settings)
+        self.embedding_service = build_embedding_service(self.effective_settings)
+        self.llm_usage_service = LlmUsageService(self.settings, self.gui_settings.load_runtime_config)
+        self.telegram = TelegramNotifier(self.settings)
+        self.telegram_assistant = TelegramAssistantService(
+            self.settings,
+            analysis_service=self.analysis_service,
+            usage_service=self.llm_usage_service,
+        )
+        self.evaluation_service = EvaluationService(self.effective_settings, self.analysis_service, self.llm_usage_service)
 
     def feed_snapshot(
         self,
@@ -451,6 +716,15 @@ class IngestionService:
                 raw_payload=payload.raw_payload,
             )
         )
+        self.llm_usage_service.record_usage(
+            db,
+            provider=payload.provider,
+            model=payload.model,
+            feature="analysis",
+            usage=payload.usage,
+            raw_payload=payload.raw_payload,
+            metadata={"filing_id": filing.id},
+        )
         db.flush()
         return True
 
@@ -515,4 +789,55 @@ def serialize_run(run: IngestionRun) -> dict:
         "updated_filings": run.updated_filings,
         "analyzed_filings": run.analyzed_filings,
         "error_message": run.error_message,
+    }
+
+
+def serialize_price_snapshot(snapshot: PriceSnapshot) -> dict:
+    return {
+        "id": snapshot.id,
+        "ticker": snapshot.ticker,
+        "provider": snapshot.provider,
+        "currency": snapshot.currency,
+        "exchange": snapshot.exchange,
+        "market_state": snapshot.market_state,
+        "regular_market_price": snapshot.regular_market_price,
+        "previous_close": snapshot.previous_close,
+        "change_amount": snapshot.change_amount,
+        "change_percent": snapshot.change_percent,
+        "day_low": snapshot.day_low,
+        "day_high": snapshot.day_high,
+        "volume": snapshot.volume,
+        "market_cap": snapshot.market_cap,
+        "fetched_at": snapshot.fetched_at.isoformat(),
+    }
+
+
+def serialize_price_run(run: PriceIngestionRun) -> dict:
+    return {
+        "id": run.id,
+        "provider": run.provider,
+        "status": run.status,
+        "requested_tickers": run.requested_tickers,
+        "successful_tickers": run.successful_tickers,
+        "failed_tickers": run.failed_tickers,
+        "error_message": run.error_message,
+        "started_at": run.started_at.isoformat(),
+        "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+    }
+
+
+def serialize_evaluation_run(run: EvaluationRun) -> dict:
+    return {
+        "id": run.id,
+        "provider": run.provider,
+        "model": run.model,
+        "label_type": run.label_type,
+        "status": run.status,
+        "total_examples": run.total_examples,
+        "completed_examples": run.completed_examples,
+        "impact_accuracy": run.impact_accuracy,
+        "summary_similarity_mean": run.summary_similarity_mean,
+        "error_message": run.error_message,
+        "started_at": run.started_at.isoformat(),
+        "completed_at": run.completed_at.isoformat() if run.completed_at else None,
     }

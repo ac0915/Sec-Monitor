@@ -14,7 +14,17 @@ from sqlalchemy.orm import Session
 from ..config import Settings
 from ..database import SessionLocal, init_db
 from ..models import AppConfigEntry
-from .analysis import build_analysis_service, normalize_provider_name
+from .analysis import build_analysis_service, fetch_provider_model_catalog, normalize_provider_name
+from .llm_usage import (
+    DEFAULT_USAGE_PROVIDER_CONFIG,
+    LlmUsageService,
+    mask_secret,
+    normalize_actor_type,
+    normalize_metric_name,
+    normalize_threshold_percentages,
+    serialize_monitoring_config,
+    usage_monitoring_defaults,
+)
 
 
 ANALYSIS_CONFIG_KEY = "analysis_runtime_config_v1"
@@ -65,12 +75,13 @@ class GuiSettingsService:
 
     def bootstrap_payload(self) -> dict:
         init_db()
-        effective_settings, runtime_source, stored_config = self._load_effective_settings()
+        effective_settings, runtime_source, stored_config, config_error = self._load_effective_settings()
         analysis_service = build_analysis_service(effective_settings)
         return {
             "auth_enabled": self.auth_enabled,
             "session_ttl_seconds": self.settings.gui_session_ttl_seconds,
             "runtime_source": runtime_source,
+            "config_error": config_error,
             "current": {
                 "provider": analysis_service.provider_name,
                 "model": analysis_service.selected_model,
@@ -86,6 +97,7 @@ class GuiSettingsService:
                 for provider_id, spec in PROVIDER_SPECS.items()
             ],
             "configured_in_gui": stored_config is not None,
+            "usage_monitoring_defaults": usage_monitoring_defaults(),
         }
 
     def create_session_token(self, password: str) -> dict:
@@ -117,15 +129,21 @@ class GuiSettingsService:
         self._require_auth_enabled()
         init_db()
 
+        config_error: str | None = None
         with SessionLocal() as db:
-            stored_config = self._load_stored_config(db)
+            try:
+                stored_config = self._load_stored_config(db)
+            except Exception as exc:
+                stored_config = None
+                config_error = str(exc)
 
-        effective_settings, runtime_source, _ = self._load_effective_settings(stored_config=stored_config)
+        effective_settings, runtime_source, _, effective_error = self._load_effective_settings(stored_config=stored_config)
         analysis_service = build_analysis_service(effective_settings)
         return {
             **self.bootstrap_payload(),
             "masked_config": self._build_masked_config(stored_config, effective_settings),
             "runtime_source": runtime_source,
+            "config_error": config_error or effective_error,
             "current": {
                 "provider": analysis_service.provider_name,
                 "model": analysis_service.selected_model,
@@ -138,17 +156,23 @@ class GuiSettingsService:
         self._require_auth_enabled()
         init_db()
 
+        config_error: str | None = None
         with SessionLocal() as db:
-            existing = self._load_stored_config(db) or {}
+            try:
+                existing = self._load_stored_config(db) or {}
+            except Exception as exc:
+                existing = {}
+                config_error = str(exc)
             normalized = self._normalize_payload(payload, existing)
             self._save_stored_config(db, normalized)
             db.commit()
 
-        effective_settings, runtime_source, stored_config = self._load_effective_settings()
+        effective_settings, runtime_source, stored_config, effective_error = self._load_effective_settings()
         analysis_service = build_analysis_service(effective_settings)
         return {
             "saved": True,
             "runtime_source": runtime_source,
+            "config_error": config_error or effective_error,
             "current": {
                 "provider": analysis_service.provider_name,
                 "model": analysis_service.selected_model,
@@ -163,7 +187,10 @@ class GuiSettingsService:
         init_db()
 
         with SessionLocal() as db:
-            existing = self._load_stored_config(db) or {}
+            try:
+                existing = self._load_stored_config(db) or {}
+            except Exception:
+                existing = {}
 
         normalized = self._normalize_payload(payload or existing, existing)
         effective_settings = self.apply_runtime_settings(self.settings, normalized)
@@ -181,6 +208,16 @@ class GuiSettingsService:
                 system_prompt="Reply with exactly one short line: OK",
                 user_prompt="OK",
             )
+            with SessionLocal() as db:
+                LlmUsageService(effective_settings, lambda: normalized).record_usage(
+                    db,
+                    provider=completion.provider,
+                    model=completion.model,
+                    feature="gui_test",
+                    usage=completion.usage,
+                    raw_payload=completion.raw_payload,
+                )
+                db.commit()
             return {
                 "ok": True,
                 "provider": completion.provider,
@@ -194,6 +231,24 @@ class GuiSettingsService:
                 "model": analysis_service.selected_model,
                 "reason": str(exc),
             }
+
+    def list_provider_models(self, provider_id: str, payload: dict | None = None) -> dict:
+        self._require_auth_enabled()
+        init_db()
+
+        provider = normalize_provider_name(provider_id)
+        if provider not in PROVIDER_SPECS:
+            raise RuntimeError(f"Unsupported provider '{provider_id}'.")
+
+        with SessionLocal() as db:
+            try:
+                existing = self._load_stored_config(db) or {}
+            except Exception:
+                existing = {}
+
+        normalized = self._normalize_payload(payload or existing, existing)
+        effective_settings = self.apply_runtime_settings(self.settings, normalized)
+        return fetch_provider_model_catalog(effective_settings, provider)
 
     def apply_runtime_settings(self, base_settings: Settings, runtime_config: dict | None = None) -> Settings:
         config = runtime_config or self.load_runtime_config()
@@ -233,18 +288,31 @@ class GuiSettingsService:
 
     def load_runtime_config(self) -> dict | None:
         init_db()
+        if not self.auth_enabled:
+            return None
         with SessionLocal() as db:
-            return self._load_stored_config(db)
+            try:
+                return self._load_stored_config(db)
+            except Exception:
+                return None
 
     def _load_effective_settings(
         self,
         *,
         stored_config: dict | None = None,
-    ) -> tuple[Settings, str, dict | None]:
-        runtime_config = stored_config if stored_config is not None else self.load_runtime_config()
+    ) -> tuple[Settings, str, dict | None, str | None]:
+        config_error: str | None = None
+        if stored_config is not None:
+            runtime_config = stored_config
+        else:
+            try:
+                runtime_config = self.load_runtime_config()
+            except Exception as exc:
+                runtime_config = None
+                config_error = str(exc)
         effective_settings = self.apply_runtime_settings(self.settings, runtime_config)
         runtime_source = "gui" if runtime_config else "env"
-        return effective_settings, runtime_source, runtime_config
+        return effective_settings, runtime_source, runtime_config, config_error
 
     def _build_masked_config(self, stored_config: dict | None, effective_settings: Settings) -> dict:
         config = stored_config or {}
@@ -293,6 +361,7 @@ class GuiSettingsService:
                     ),
                 },
             },
+            "usage_monitoring": self._build_masked_usage_monitoring_config(config),
         }
 
     def _load_stored_config(self, db: Session) -> dict | None:
@@ -329,6 +398,7 @@ class GuiSettingsService:
                 self.settings.analysis_timeout_seconds,
             ),
             "providers": {},
+            "usage_monitoring": {"providers": {}},
         }
 
         incoming_providers = payload.get("providers", {}) if isinstance(payload.get("providers"), dict) else {}
@@ -375,6 +445,67 @@ class GuiSettingsService:
                 provider_out[field] = incoming_value
 
             normalized["providers"][provider_id] = provider_out
+
+        current_usage = current.get("usage_monitoring", {}) if isinstance(current.get("usage_monitoring"), dict) else {}
+        incoming_usage = payload.get("usage_monitoring", {}) if isinstance(payload.get("usage_monitoring"), dict) else {}
+        current_usage_providers = current_usage.get("providers", {}) if isinstance(current_usage.get("providers"), dict) else {}
+        incoming_usage_providers = incoming_usage.get("providers", {}) if isinstance(incoming_usage.get("providers"), dict) else {}
+
+        for provider_id, defaults in DEFAULT_USAGE_PROVIDER_CONFIG.items():
+            provider_current = current_usage_providers.get(provider_id, {})
+            provider_incoming = incoming_usage_providers.get(provider_id, {})
+            if not isinstance(provider_current, dict):
+                provider_current = {}
+            if not isinstance(provider_incoming, dict):
+                provider_incoming = {}
+
+            provider_usage: dict[str, Any] = {
+                "enabled": self._coerce_bool(provider_incoming.get("enabled", provider_current.get("enabled", defaults.get("enabled", False)))),
+                "alert_enabled": self._coerce_bool(
+                    provider_incoming.get("alert_enabled", provider_current.get("alert_enabled", defaults.get("alert_enabled", True)))
+                ),
+                "prefer_provider_api": self._coerce_bool(
+                    provider_incoming.get("prefer_provider_api", provider_current.get("prefer_provider_api", defaults.get("prefer_provider_api", False)))
+                ),
+                "metric_name": normalize_metric_name(
+                    provider_incoming.get("metric_name", provider_current.get("metric_name", defaults.get("metric_name"))),
+                    provider_id,
+                ),
+                "limit_value": self._coerce_float(
+                    provider_incoming.get("limit_value", provider_current.get("limit_value", defaults.get("limit_value", 0.0))),
+                    float(defaults.get("limit_value", 0.0)),
+                ),
+                "threshold_percentages": normalize_threshold_percentages(
+                    provider_incoming.get(
+                        "threshold_percentages",
+                        provider_current.get("threshold_percentages", defaults.get("threshold_percentages", [])),
+                    )
+                ),
+                "billing_actor_type": normalize_actor_type(
+                    provider_incoming.get(
+                        "billing_actor_type",
+                        provider_current.get("billing_actor_type", defaults.get("billing_actor_type", "user")),
+                    )
+                ),
+                "billing_actor": str(
+                    provider_incoming.get(
+                        "billing_actor",
+                        provider_current.get("billing_actor", defaults.get("billing_actor", "")),
+                    )
+                    or ""
+                ).strip(),
+            }
+
+            incoming_billing_token = provider_incoming.get("billing_token")
+            current_billing_token = provider_current.get("billing_token")
+            if isinstance(incoming_billing_token, str) and incoming_billing_token.strip():
+                provider_usage["billing_token"] = incoming_billing_token.strip()
+            elif incoming_billing_token is None or str(incoming_billing_token).strip() == "":
+                provider_usage["billing_token"] = current_billing_token
+            else:
+                provider_usage["billing_token"] = incoming_billing_token
+
+            normalized["usage_monitoring"]["providers"][provider_id] = provider_usage
 
         return normalized
 
@@ -432,11 +563,20 @@ class GuiSettingsService:
         if key not in provider_payload:
             return fallback
         value = provider_payload.get(key)
+        if value is None:
+            return fallback
+        if isinstance(value, str) and not value.strip():
+            return fallback
         return value
 
     def _masked_value(self, provider_payload: dict, key: str, fallback: Any) -> Any:
         if key in provider_payload:
-            return provider_payload.get(key)
+            value = provider_payload.get(key)
+            if value is None:
+                return fallback
+            if isinstance(value, str) and not value.strip():
+                return fallback
+            return value
         return fallback
 
     def _has_secret(self, provider_payload: dict, key: str, fallback: Any) -> bool:
@@ -450,14 +590,7 @@ class GuiSettingsService:
         return self._mask_secret(fallback)
 
     def _mask_secret(self, value: Any) -> str | None:
-        if value is None:
-            return None
-        text = str(value).strip()
-        if not text:
-            return None
-        if len(text) <= 8:
-            return "*" * len(text)
-        return f"{text[:4]}...{text[-4:]}"
+        return mask_secret(value)
 
     def _coerce_int(self, value: Any, default: int) -> int:
         try:
@@ -470,3 +603,22 @@ class GuiSettingsService:
             return float(value)
         except (TypeError, ValueError):
             return default
+
+    def _coerce_bool(self, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return False
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _build_masked_usage_monitoring_config(self, config: dict | None) -> dict:
+        raw_usage = config.get("usage_monitoring", {}) if isinstance(config, dict) else {}
+        raw_providers = raw_usage.get("providers", {}) if isinstance(raw_usage, dict) else {}
+        output = {"providers": {}}
+        for provider_id, defaults in DEFAULT_USAGE_PROVIDER_CONFIG.items():
+            provider = raw_providers.get(provider_id, {}) if isinstance(raw_providers, dict) else {}
+            if not isinstance(provider, dict):
+                provider = {}
+            merged = {**defaults, **provider}
+            output["providers"][provider_id] = serialize_monitoring_config(merged)
+        return output

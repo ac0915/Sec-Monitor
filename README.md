@@ -47,9 +47,23 @@
 - `filing_chunks`
   - 已切块的语料
   - 适合后续 embedding、RAG、训练样本整理
+- `filing_chunk_embeddings`
+  - chunk 级 embedding 向量
+  - 保存 provider、model、维度、状态和原始响应
 - `ingestion_runs`
   - 每次轮询的运行记录
   - 便于监控匹配率、异常和分析覆盖率
+- `price_snapshots`
+  - 真实市场价格快照
+  - 与 filing / dashboard 使用同一数据库统一管理
+- `price_ingestion_runs`
+  - 价格采集运行历史
+- `admin_users` / `admin_api_tokens` / `admin_audit_events`
+  - API 认证、RBAC 和审计日志
+- `label_tasks` / `label_records`
+  - 标注任务流和标注结果
+- `evaluation_runs` / `evaluation_examples`
+  - 模型评测运行和逐样本结果
 - `telegram_chats`
   - Telegram 会话元数据
   - 保存订阅状态、助手开关、最近收发时间
@@ -95,6 +109,8 @@
 .
 ├── main.py                    # FastAPI API + dashboard entry
 ├── sec_monitor.py             # Worker / CLI / corpus export entry
+├── db_migrations/             # Alembic migration scripts
+├── alembic.ini
 ├── secmon/
 │   ├── config.py              # 环境配置
 │   ├── database.py            # SQLAlchemy engine/session
@@ -104,6 +120,11 @@
 │   └── services/
 │       ├── sec_client.py      # SEC feed + 文档抓取
 │       ├── analysis.py        # 多 provider 分析层
+│       ├── auth.py            # Admin auth + RBAC + audit
+│       ├── prices.py          # Real market price ingestion
+│       ├── embeddings.py      # Chunk embedding service
+│       ├── labeling.py        # Label task workflow
+│       ├── evaluation.py      # Model eval workflow
 │       └── telegram.py        # Telegram alerts + assistant + webhook/polling handling
 ├── public/
 │   ├── index.html             # 新版控制台
@@ -125,8 +146,12 @@
 - 配置外置：环境变量取代硬编码密钥
 - 数据持久化：不再依赖内存 `seen_filings`
 - LLM 语料化：正文自动切块入库
+- Embedding 化：chunk embedding 表和生成任务
 - 数据导出：可直接导出 JSONL 语料包
 - 可运维：保存 ingestion runs，页面可见运行历史
+- 可审计：admin 用户、token、权限和操作审计
+- 可评测：标注流和 eval run 落库
+- 可扩展：Alembic migration 管理 schema 演进
 - 可升级：SQLite 到 Postgres 只需切换 `DATABASE_URL`
 - worldmonitor 风格情报层：brief、signal index、theme correlation、focus watchlist、可保存的工作台偏好
 
@@ -177,6 +202,8 @@ pip install -r requirements.txt
 npm install
 ```
 
+当前 Gemini 路径已经迁到官方 `google-genai` SDK，不再使用已弃用的 `google.generativeai`。
+
 ### 2. 配置环境变量
 
 复制示例文件：
@@ -184,6 +211,14 @@ npm install
 ```bash
 cp .env.example .env
 ```
+
+首次引入 Alembic 后，推荐显式执行一次迁移：
+
+```bash
+alembic upgrade head
+```
+
+如果你是从旧版本 SQLite 直接升级，应用启动时也会自动检测老库并补齐缺失表，然后把版本 `stamp` 到当前 head。
 
 至少应修改这些项：
 
@@ -213,6 +248,30 @@ cp .env.example .env
 - `TELEGRAM_WEBHOOK_SECRET`
   - webhook 模式建议配置
   - 用于校验 Telegram webhook secret header
+- `GUI_ADMIN_PASSWORD`
+  - 用于启用网页里的 LLM 控制台
+  - 配好后，页面可直接添加 / 切换 provider、保存密钥并测试连通性
+- `ADMIN_BOOTSTRAP_USERNAME`
+  - 首个 admin 用户名
+  - 默认 `admin`
+- `ADMIN_BOOTSTRAP_PASSWORD`
+  - 首个 admin 用户密码
+  - 用于 `/api/admin/auth/login`
+- `ADMIN_TOKEN_TTL_SECONDS`
+  - admin bearer token 有效期
+- `PRICE_PROVIDER`
+  - 当前默认 `yahoo`
+- `EMBEDDING_PROVIDER`
+  - 当前默认 `gemini`
+  - 需要真实可用的 embedding provider 配置
+- `GUI_SESSION_TTL_SECONDS`
+  - GUI 管理会话有效期，默认 8 小时
+- `GUI_CONFIG_SALT`
+  - GUI 加密配置使用的 salt
+  - 生产环境建议改成你自己的随机字符串
+- `LLM_USAGE_SYNC_INTERVAL_SECONDS`
+  - account 级 LLM 用量同步 worker 的轮询间隔
+  - 默认 900 秒
 
 ### Provider 选择
 
@@ -257,6 +316,7 @@ ANALYSIS_MODEL=your-model-name
 ```text
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash
+EMBEDDING_MODEL=gemini-embedding-001
 ```
 
 - `GEMINI_API_KEY`
@@ -269,6 +329,10 @@ GEMINI_MODEL=gemini-2.5-flash
   - 这是模型名，不是密钥
   - 默认的 `gemini-2.5-flash` 可以直接用，通常不需要改
   - 如果你要换模型，再到 Google AI Studio / Gemini 文档里确认当前可用模型
+- `EMBEDDING_MODEL`
+  - 当前默认 `gemini-embedding-001`
+  - 这是 Gemini embedding 模型名
+  - 本项目的 chunk embedding 现在也走 `google-genai`
 
 #### DeepSeek
 
@@ -439,6 +503,151 @@ uvicorn main:app --reload
 http://127.0.0.1:8000
 ```
 
+### 3.1 在 GUI 里配置 LLM API 和授权
+
+启动 API 后，打开首页右上角的 `LLM Control`。
+
+使用方式：
+
+- 先在 `.env` 里设置 `GUI_ADMIN_PASSWORD`
+- 重启 `uvicorn`
+- 在页面里输入这个密码解锁控制面板
+- 直接在 GUI 里填写 provider 的 API key / token / model / base URL
+- 点击 `Test Active Provider` 做实时连通性测试
+- 点击 `Save Settings` 后，worker、dashboard 和 Telegram 助手都会读取这套 GUI 配置
+
+当前 GUI 支持：
+
+- `gemini`
+  - 可直接在页面里填 `API key`
+- `deepseek`
+  - 可直接在页面里填 `API key`
+- `grok`
+  - 可直接在页面里填 `API key`
+- `github`
+  - 可直接在页面里填 `GitHub Models token`
+- `copilot`
+  - GUI 里可配置模型和 Node 路径
+  - 真正授权仍来自本机 `Copilot CLI` 登录态，不是网页 OAuth
+- 每个 provider 都可以在 GUI 中额外保存：
+  - 用量监控开关
+  - 本月总额度
+  - 阈值百分比
+  - Telegram 告警开关
+  - 账单 actor / billing token
+
+保存行为：
+
+- 点击 `Save Settings` 后，provider 凭证和用量监控配置都会加密写入数据库
+- 下次重启 API、worker 或刷新页面后，会自动从数据库恢复
+- 不需要重新填写 token、model、阈值和额度
+
+实现细节：
+
+- GUI 保存的敏感字段会加密后写入数据库
+- 页面里的解锁口令默认可直接使用 `GUI_ADMIN_PASSWORD`
+- 如果你另外设置了 `ADMIN_BOOTSTRAP_PASSWORD`，GUI 登录也可以复用当前 bootstrap admin 密码
+- 如果没有设置 `GUI_ADMIN_PASSWORD`，控制台只会提示如何启用，不会开放写入接口
+
+### 3.2 在 GUI 里配置 LLM 用量监控
+
+`LLM Control` 里现在每个 provider 卡片都包含 `Usage Monitoring` 区块。
+
+可以直接配置：
+
+- `Tracking`
+  - 是否启用该 provider 的用量记录
+- `Alerts`
+  - 是否在命中阈值时发 Telegram 通知
+- `Metric`
+  - 监控指标，例如 `total_tokens`、`requests`、`cost_usd`
+- `Total Limit`
+  - 本月总额度
+- `Threshold %`
+  - 阈值列表，例如 `50,80,90,100`
+- `Usage Source`
+  - `Local Events`
+    - 优先用本项目每次真实请求返回的 usage metadata 聚合
+  - `Provider API First`
+    - 优先用 provider 官方账单 / 用量接口
+
+当前支持情况：
+
+- `gemini`
+  - 自动记录每次真实响应里的 token usage
+- `deepseek`
+  - 自动记录每次真实响应里的 token usage
+- `grok`
+  - 自动记录每次真实响应里的 token usage
+- `github`
+  - 自动记录每次真实响应里的 usage
+  - 也支持通过 GitHub Billing API 拉 account 级 Models 用量 / 花费
+- `copilot`
+  - 自动记录 Copilot SDK 返回的 usage
+  - 也支持通过 GitHub Billing API 拉 premium request usage
+
+如果你要启用 provider 侧账单同步：
+
+- 在 `github` 或 `copilot` 卡片里填：
+  - `Billing Actor Type`
+  - `Billing Actor`
+  - 可选 `Billing Token`
+- 点击 `Sync Usage`
+  - 会立刻拉一次 provider 侧真实用量
+
+如果你要持续自动同步 account 级 usage，运行：
+
+```bash
+python sec_monitor.py run-llm-usage-worker
+```
+
+只同步一次：
+
+```bash
+python sec_monitor.py llm-usage-sync-once
+```
+
+阈值通知逻辑：
+
+- 监控周期按自然月统计，例如 `2026-03`
+- 达到阈值后会写入 `llm_usage_alert_events`
+- 如果 Telegram bot 已配置，会自动发送系统通知
+- 同一个 provider / 月份 / 指标 / 阈值只通知一次，避免重复提醒
+
+### 3.3 Admin 认证与权限控制
+
+现在所有管理类写操作都走统一的 admin token，而不是匿名调用：
+
+- `viewer`
+  - 预留给只读后台接口
+- `operator`
+  - 可执行价格同步、embedding、标注、评测等操作
+- `admin`
+  - 额外可管理用户和审计日志
+
+登录：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/admin/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"your-password"}'
+```
+
+拿到 bearer token 后，可访问：
+
+- `GET /api/admin/me`
+- `GET /api/admin/users`
+- `POST /api/admin/users`
+- `GET /api/admin/audit`
+- `POST /api/admin/prices/sync`
+- `POST /api/admin/embeddings/run`
+- `GET /api/admin/labels/tasks`
+- `POST /api/admin/labels/seed`
+- `POST /api/admin/labels/tasks/{task_id}/submit`
+- `GET /api/admin/evals`
+- `GET /api/admin/evals/latest`
+- `POST /api/admin/evals/run`
+
 ### 4. 启动 worker
 
 持续轮询：
@@ -447,11 +656,38 @@ http://127.0.0.1:8000
 python sec_monitor.py run-worker
 ```
 
+这个 worker 现在默认会：
+
+- 抓 SEC feed
+- 入库 filing / analysis / chunks
+- 尝试同步价格快照
+
 只跑一次：
 
 ```bash
 python sec_monitor.py ingest-once
 ```
+
+其它工业化命令：
+
+```bash
+python sec_monitor.py prices-sync-once
+python sec_monitor.py run-price-worker
+python sec_monitor.py embed-chunks-once --limit 32
+python sec_monitor.py seed-label-tasks --limit 25
+python sec_monitor.py run-eval --limit 25
+```
+
+说明：
+
+- `prices-sync-once`
+  - 抓真实市场价格并写入 `price_snapshots`
+- `embed-chunks-once`
+  - 给尚未 embedding 的 chunk 生成向量并写入 `filing_chunk_embeddings`
+- `seed-label-tasks`
+  - 从已有真实 filing 里播种标注任务
+- `run-eval`
+  - 用当前 analysis provider 对已标注样本跑一次评测并落库
 
 ### 5. 启动 Telegram 双向助手
 

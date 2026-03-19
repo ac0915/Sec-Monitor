@@ -18,14 +18,21 @@ async function main() {
   }
 
   const client = new CopilotClient();
+  await client.start();
   try {
     const session = await client.createSession({ model: input.model });
+    let latestUsage = null;
+    session.on("assistant.usage", (event) => {
+      latestUsage = event?.data || null;
+    });
+
     const response = await session.sendAndWait({ prompt: input.prompt });
     const content = response?.data?.content ?? "";
     process.stdout.write(
       JSON.stringify({
         content,
         response: response?.data ?? null,
+        usage: latestUsage,
       })
     );
   } finally {
@@ -37,4 +44,3 @@ main().catch((error) => {
   process.stderr.write(String(error?.stack || error?.message || error));
   process.exit(1);
 });
-
