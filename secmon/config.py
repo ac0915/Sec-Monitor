@@ -108,6 +108,9 @@ class Settings:
     telegram_assistant_context_filings: int
     telegram_assistant_history_messages: int
     telegram_webhook_secret: str | None
+    gui_admin_password: str | None
+    gui_session_ttl_seconds: int
+    gui_config_salt: str
     llm_chunk_size: int
     llm_chunk_overlap: int
     allowed_origins: tuple[str, ...]
@@ -167,6 +170,9 @@ def get_settings() -> Settings:
         telegram_assistant_context_filings=_env_int("TELEGRAM_ASSISTANT_CONTEXT_FILINGS", 6),
         telegram_assistant_history_messages=_env_int("TELEGRAM_ASSISTANT_HISTORY_MESSAGES", 6),
         telegram_webhook_secret=_env_optional_str("TELEGRAM_WEBHOOK_SECRET"),
+        gui_admin_password=_env_optional_str("GUI_ADMIN_PASSWORD"),
+        gui_session_ttl_seconds=_env_int("GUI_SESSION_TTL_SECONDS", 28800),
+        gui_config_salt=_env_str("GUI_CONFIG_SALT", "sec-monitor-gui-config"),
         llm_chunk_size=_env_int("LLM_CHUNK_SIZE", 1800),
         llm_chunk_overlap=_env_int("LLM_CHUNK_OVERLAP", 250),
         allowed_origins=_env_csv("ALLOWED_ORIGINS", "*"),

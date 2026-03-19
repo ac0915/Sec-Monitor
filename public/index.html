@@ -4,12 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="sec-monitor-api-base" content="" />
-    <title>SEC Monitor Control Room</title>
+    <title>SEC Signal Command Center</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
       rel="stylesheet"
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%2307111a'/%3E%3Cpath d='M14 36h10l4-10 8 22 6-14h8' fill='none' stroke='%23ff7b3d' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
     />
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
@@ -20,45 +24,115 @@
     <div class="page-shell">
       <header class="hero-panel">
         <div class="hero-copy">
-          <p class="eyebrow">Industrial SEC Intelligence Stack</p>
-          <h1>SEC Monitor Control Room</h1>
+          <p class="eyebrow">Worldmonitor-Inspired SEC Intelligence</p>
+          <h1>SEC Signal Command Center</h1>
           <p class="hero-text">
-            用数据库沉淀 SEC 披露、AI 分析和可投喂语料，把实时提醒升级成可持续迭代的研究基础设施。
+            把 filing 流数据升级成可操作的情报层：brief、signal index、theme correlation、持久化筛选和真正可用的研究台。
           </p>
 
           <div class="status-row">
             <div class="status-pill" id="health-pill">Connecting real data</div>
-            <div class="status-meta" id="status-meta">正在连接真实 SEC 与数据库数据源。</div>
+            <div class="status-meta" id="status-meta">正在连接真实 SEC、数据库和情报层。</div>
+          </div>
+
+          <div class="hero-actions">
+            <button class="ghost-button" id="command-open" type="button">Search / Command</button>
+            <button class="ghost-button" id="refresh-button" type="button">Refresh Now</button>
+            <div class="shortcut-hint">Ctrl/Cmd + K</div>
           </div>
         </div>
 
-        <div class="hero-metrics" id="hero-metrics">
-          <div class="empty-state compact-empty">等待真实数据入库后显示指标。</div>
+        <div class="hero-side">
+          <div class="hero-metrics" id="hero-metrics">
+            <div class="empty-state compact-empty">等待真实数据入库后显示指标。</div>
+          </div>
+          <div class="ops-strip" id="ops-strip"></div>
         </div>
       </header>
 
       <main class="grid-layout">
-        <section class="panel span-8">
+        <section class="panel span-5">
           <div class="panel-header">
             <div>
-              <p class="panel-kicker">Flow</p>
-              <h2>Signal Velocity</h2>
+              <p class="panel-kicker">Brief</p>
+              <h2>SEC Brief</h2>
             </div>
-            <p class="panel-caption">最近 14 天分 tier 入库情况，直接反映 watchlist 的事件密度。</p>
+            <p class="panel-caption">参考 worldmonitor 的 briefing 思路，对最近真实披露做统一情报概览。</p>
           </div>
-          <div class="chart-panel" id="trend-chart"></div>
+          <div class="brief-shell" id="brief-panel"></div>
         </section>
 
-        <section class="panel span-4">
+        <section class="panel span-7">
           <div class="panel-header">
             <div>
-              <p class="panel-kicker">Corpus</p>
-              <h2>LLM Readiness</h2>
+              <p class="panel-kicker">Index</p>
+              <h2>Signal Index</h2>
             </div>
-            <p class="panel-caption">可用于 RAG、评测、微调前清洗的核心语料统计。</p>
+            <p class="panel-caption">把 filing 密度、tier、主题、影响和新鲜度折成一个关注度指数。</p>
           </div>
-          <div class="corpus-grid" id="corpus-grid"></div>
-          <div class="sentiment-stack" id="sentiment-stack"></div>
+          <div class="signal-list" id="signal-index"></div>
+        </section>
+
+        <section class="panel span-6">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Correlation</p>
+              <h2>Theme Correlations</h2>
+            </div>
+            <p class="panel-caption">把跨 ticker 的披露聚成主题簇，而不是只看单条 filing。</p>
+          </div>
+          <div class="cluster-list" id="theme-clusters"></div>
+        </section>
+
+        <section class="panel span-6">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Workbench</p>
+              <h2>Operator Deck</h2>
+            </div>
+            <p class="panel-caption">本地偏好、focus watchlist、auto refresh 与语料 readiness。</p>
+          </div>
+          <div class="control-stack">
+            <section class="pref-card">
+              <div class="pref-title-row">
+                <h3>Focus Watchlist</h3>
+                <div class="detail-meta">本地保存，不会写回服务端 watchlist</div>
+              </div>
+              <div class="focus-form">
+                <input
+                  class="focus-input"
+                  id="focus-input"
+                  type="text"
+                  placeholder="输入 ticker，例如 NVDA"
+                  maxlength="16"
+                />
+                <button class="ghost-button compact" id="focus-add" type="button">Add</button>
+              </div>
+              <div class="focus-chips" id="focus-chips"></div>
+            </section>
+
+            <section class="pref-card">
+              <div class="pref-title-row">
+                <h3>Session Settings</h3>
+                <div class="detail-meta">参考 worldmonitor 的本地偏好持久化</div>
+              </div>
+              <label class="toggle-row">
+                <span>Auto refresh</span>
+                <input type="checkbox" id="auto-refresh-toggle" />
+              </label>
+              <label class="toggle-row">
+                <span>Dense feed mode</span>
+                <input type="checkbox" id="dense-mode-toggle" />
+              </label>
+              <label class="toggle-row">
+                <span>Focus watchlist only</span>
+                <input type="checkbox" id="focus-only-toggle" />
+              </label>
+              <div class="ops-health" id="ops-health"></div>
+            </section>
+
+            <div class="corpus-grid" id="corpus-grid"></div>
+          </div>
         </section>
 
         <section class="panel span-12">
@@ -67,17 +141,64 @@
               <p class="panel-kicker">Live Feed</p>
               <h2>Filing Dossiers</h2>
             </div>
-            <div class="feed-controls">
+            <div class="result-meta" id="result-meta">正在读取真实 filing 数据…</div>
+          </div>
+
+          <div class="control-bar">
+            <div class="filter-grid">
+              <div class="input-shell search-shell">
+                <input id="feed-search" type="search" placeholder="搜索 ticker、公司、form、摘要、主题" />
+              </div>
               <div class="tier-filters" id="tier-filters">
                 <button class="filter-chip is-active" data-tier="all">All</button>
                 <button class="filter-chip" data-tier="1">Tier 1</button>
                 <button class="filter-chip" data-tier="2">Tier 2</button>
                 <button class="filter-chip" data-tier="3">Tier 3</button>
               </div>
-              <div class="result-meta" id="result-meta">正在读取真实 filing 数据…</div>
+              <div class="select-shell">
+                <select id="impact-filter">
+                  <option value="all">All Impact</option>
+                </select>
+              </div>
+              <div class="select-shell">
+                <select id="form-filter">
+                  <option value="">All Forms</option>
+                </select>
+              </div>
+              <div class="select-shell">
+                <select id="theme-filter">
+                  <option value="all">All Themes</option>
+                </select>
+              </div>
+              <button class="ghost-button compact" id="clear-filters" type="button">Clear</button>
             </div>
+
+            <div class="quick-actions" id="theme-shortcuts"></div>
           </div>
+
           <div class="filings-feed" id="filings-feed"></div>
+        </section>
+
+        <section class="panel span-8">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Flow</p>
+              <h2>Signal Velocity</h2>
+            </div>
+            <p class="panel-caption">最近 14 天分 tier 入库情况，显示 watchlist 的事件密度变化。</p>
+          </div>
+          <div class="chart-panel" id="trend-chart"></div>
+        </section>
+
+        <section class="panel span-4">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Pulse</p>
+              <h2>Impact Stack</h2>
+            </div>
+            <p class="panel-caption">已有分析结果的影响分布与 Telegram / LLM 运行状态。</p>
+          </div>
+          <div class="sentiment-stack" id="sentiment-stack"></div>
         </section>
 
         <section class="panel span-12">
@@ -86,7 +207,7 @@
               <p class="panel-kicker">Operations</p>
               <h2>Ingestion Runs</h2>
             </div>
-            <p class="panel-caption">轮询质量、匹配率和分析覆盖率都在这里。</p>
+            <p class="panel-caption">采集质量、匹配率与分析覆盖率的运行历史。</p>
           </div>
           <div class="runs-table" id="runs-table"></div>
         </section>
@@ -100,6 +221,19 @@
         <div id="drawer-content"></div>
       </div>
     </aside>
+
+    <div class="command-overlay hidden" id="command-overlay">
+      <div class="command-modal" role="dialog" aria-modal="true" aria-label="Search and command">
+        <div class="command-header">
+          <div class="input-shell command-input-shell">
+            <input id="command-input" type="search" placeholder="搜索 filing 或执行命令，例如 tier 1 / financing / NVDA" />
+          </div>
+          <button class="ghost-button compact" id="command-close" type="button">Close</button>
+        </div>
+        <div class="command-results" id="command-results"></div>
+        <div class="command-footer">回车执行，Esc 关闭。支持快速命令、ticker 聚焦和 filing 直达。</div>
+      </div>
+    </div>
 
     <script src="/static/app.js"></script>
   </body>

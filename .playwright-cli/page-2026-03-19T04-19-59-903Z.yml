@@ -1,0 +1,461 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - paragraph [ref=e5]: Worldmonitor-Inspired SEC Intelligence
+        - heading "SEC Signal Command Center" [level=1] [ref=e6]
+        - paragraph [ref=e7]: 把 filing 流数据升级成可操作的情报层：brief、signal index、theme correlation、持久化筛选和真正可用的研究台。
+        - generic [ref=e8]:
+          - generic [ref=e9]: Pipeline needs attention
+          - generic [ref=e10]: 2026年3月19日 上午04:12 · seen 0 · matched 0 · analysis gemini/gemini-2.5-flash · Telegram assistant ready · 0 subscribed · real-data only
+        - generic [ref=e11]:
+          - button "Search / Command" [ref=e12] [cursor=pointer]
+          - button "Refresh Now" [ref=e13] [cursor=pointer]
+          - generic [ref=e14]: Ctrl/Cmd + K
+      - generic [ref=e15]:
+        - generic [ref=e16]:
+          - article [ref=e17]:
+            - paragraph [ref=e18]: Total Filings
+            - generic [ref=e19]: "2"
+            - generic [ref=e20]: Watchlist 43
+          - article [ref=e21]:
+            - paragraph [ref=e22]: Tier 1 Events
+            - generic [ref=e23]: "0"
+            - generic [ref=e24]: 最高优先级披露池
+          - article [ref=e25]:
+            - paragraph [ref=e26]: High-Signal Names
+            - generic [ref=e27]: "0"
+            - generic [ref=e28]: Signal Index >= 68
+          - article [ref=e29]:
+            - paragraph [ref=e30]: Corpus Chunks
+            - generic [ref=e31]: "0"
+            - generic [ref=e32]: RAG / eval ready
+        - generic [ref=e33]:
+          - article [ref=e34]:
+            - generic [ref=e35]: LLM
+            - generic [ref=e36]: Ready
+            - generic [ref=e37]: gemini/gemini-2.5-flash
+          - article [ref=e38]:
+            - generic [ref=e39]: Telegram
+            - generic [ref=e40]: Live
+            - generic [ref=e41]: 0 subscribed
+          - article [ref=e42]:
+            - generic [ref=e43]: Brief Mode
+            - generic [ref=e44]: rules-based
+            - generic [ref=e45]: worldmonitor-style control brief
+          - article [ref=e46]:
+            - generic [ref=e47]: Focus List
+            - generic [ref=e48]: "0"
+            - generic [ref=e49]: focus-only off
+    - main [ref=e50]:
+      - generic [ref=e51]:
+        - generic [ref=e52]:
+          - generic [ref=e53]:
+            - paragraph [ref=e54]: Brief
+            - heading "SEC Brief" [level=2] [ref=e55]
+          - paragraph [ref=e56]: 参考 worldmonitor 的 briefing 思路，对最近真实披露做统一情报概览。
+        - generic [ref=e57]:
+          - generic [ref=e58]:
+            - generic [ref=e59]: 过去 1 天内，数据库新增或保留在高关注区间的真实披露共 2 条，涉及 1 个 ticker。 主导主题集中在 Insider Activity。
+            - generic [ref=e60]: Generated 2026年3月19日 下午12:19 · rules-based
+          - generic [ref=e61]:
+            - generic [ref=e62]:
+              - generic [ref=e63]: Action Plan
+              - generic [ref=e64]: 保持事件驱动筛选，优先阅读 Tier 1 和主题聚集度最高的文件。
+            - generic [ref=e65]:
+              - generic [ref=e66]: Risk Watch
+              - generic [ref=e67]: 当前市场信号偏混合，避免只依据单条 filing 下判断。
+          - generic [ref=e68]:
+            - 'button "Tier 2 4 待分析 GOOGL · Alphabet Filed: 2026-03-18 AccNo: 0001193125-26-114872 Size: 11 KB" [ref=e69] [cursor=pointer]':
+              - generic [ref=e70]:
+                - generic [ref=e71]: Tier 2
+                - generic [ref=e72]: "4"
+                - generic [ref=e73]: 待分析
+              - strong [ref=e74]: GOOGL · Alphabet
+              - generic [ref=e75]: "Filed: 2026-03-18 AccNo: 0001193125-26-114872 Size: 11 KB"
+            - 'button "Tier 2 4 待分析 GOOGL · Alphabet Filed: 2026-03-18 AccNo: 0001193125-26-114871 Size: 7 KB" [ref=e76] [cursor=pointer]':
+              - generic [ref=e77]:
+                - generic [ref=e78]: Tier 2
+                - generic [ref=e79]: "4"
+                - generic [ref=e80]: 待分析
+              - strong [ref=e81]: GOOGL · Alphabet
+              - generic [ref=e82]: "Filed: 2026-03-18 AccNo: 0001193125-26-114871 Size: 7 KB"
+      - generic [ref=e83]:
+        - generic [ref=e84]:
+          - generic [ref=e85]:
+            - paragraph [ref=e86]: Index
+            - heading "Signal Index" [level=2] [ref=e87]
+          - paragraph [ref=e88]: 把 filing 密度、tier、主题、影响和新鲜度折成一个关注度指数。
+        - button "GOOGL · Alphabet GOOGL 当前为 Elevated 关注级别，近 30 天共有 2 条真实披露，最新为 4。主导主题：Insider Activity。 Insider Activity 48 Elevated Mixed 2 filings · 0 tier1" [ref=e90] [cursor=pointer]:
+          - generic [ref=e91]:
+            - generic [ref=e92]:
+              - generic [ref=e93]: GOOGL · Alphabet
+              - generic [ref=e94]: GOOGL 当前为 Elevated 关注级别，近 30 天共有 2 条真实披露，最新为 4。主导主题：Insider Activity。
+              - generic [ref=e96]: Insider Activity
+            - generic [ref=e97]:
+              - strong [ref=e98]: "48"
+              - text: Elevated
+          - generic [ref=e101]:
+            - generic [ref=e102]: Mixed
+            - generic [ref=e103]: 2 filings · 0 tier1
+      - generic [ref=e104]:
+        - generic [ref=e105]:
+          - generic [ref=e106]:
+            - paragraph [ref=e107]: Correlation
+            - heading "Theme Correlations" [level=2] [ref=e108]
+          - paragraph [ref=e109]: 把跨 ticker 的披露聚成主题簇，而不是只看单条 filing。
+        - article [ref=e111]:
+          - generic [ref=e112]:
+            - generic [ref=e113]:
+              - heading "Insider Activity" [level=3] [ref=e114]
+              - generic [ref=e115]: 内部人买卖或激励相关披露。
+            - button "Filter" [ref=e116] [cursor=pointer]
+          - strong [ref=e120]: "100"
+          - generic [ref=e121]: Insider Activity 主题近 21 天出现 2 次，覆盖 GOOGL。
+          - button "GOOGL" [ref=e123]
+      - generic [ref=e124]:
+        - generic [ref=e125]:
+          - generic [ref=e126]:
+            - paragraph [ref=e127]: Workbench
+            - heading "Operator Deck" [level=2] [ref=e128]
+          - paragraph [ref=e129]: 本地偏好、focus watchlist、auto refresh 与语料 readiness。
+        - generic [ref=e130]:
+          - generic [ref=e131]:
+            - generic [ref=e132]:
+              - heading "Focus Watchlist" [level=3] [ref=e133]
+              - generic [ref=e134]: 本地保存，不会写回服务端 watchlist
+            - generic [ref=e135]:
+              - textbox "输入 ticker，例如 NVDA" [ref=e136]
+              - button "Add" [ref=e137] [cursor=pointer]
+            - generic [ref=e139]: 还没有本地 focus ticker。
+          - generic [ref=e140]:
+            - generic [ref=e141]:
+              - heading "Session Settings" [level=3] [ref=e142]
+              - generic [ref=e143]: 参考 worldmonitor 的本地偏好持久化
+            - generic [ref=e144]:
+              - generic [ref=e145]: Auto refresh
+              - checkbox "Auto refresh" [checked] [ref=e146]
+            - generic [ref=e147]:
+              - generic [ref=e148]: Dense feed mode
+              - checkbox "Dense feed mode" [ref=e149]
+            - generic [ref=e150]:
+              - generic [ref=e151]: Focus watchlist only
+              - checkbox "Focus watchlist only" [ref=e152]
+            - generic [ref=e153]:
+              - generic [ref=e154]: "LLM: gemini/gemini-2.5-flash"
+              - generic [ref=e155]: "Telegram assistant: enabled"
+              - generic [ref=e156]: "Real-data policy: synthetic_data = false"
+          - generic [ref=e157]:
+            - article [ref=e158]:
+              - paragraph [ref=e159]: Raw Text Ready
+              - generic [ref=e160]: "0"
+              - generic [ref=e161]: 已抓正文
+            - article [ref=e162]:
+              - paragraph [ref=e163]: Analysis Coverage
+              - generic [ref=e164]: 0%
+              - generic [ref=e165]: 已分析比例
+            - article [ref=e166]:
+              - paragraph [ref=e167]: Telegram Chats
+              - generic [ref=e168]: "0"
+              - generic [ref=e169]: polling mode
+            - article [ref=e170]:
+              - paragraph [ref=e171]: Focus Coverage
+              - generic [ref=e172]: 0%
+              - generic [ref=e173]: 本地关注池 / 主 watchlist
+      - generic [ref=e174]:
+        - generic [ref=e175]:
+          - generic [ref=e176]:
+            - paragraph [ref=e177]: Live Feed
+            - heading "Filing Dossiers" [level=2] [ref=e178]
+          - generic [ref=e179]: 2 real dossiers matched
+        - generic [ref=e180]:
+          - generic [ref=e181]:
+            - searchbox "搜索 ticker、公司、form、摘要、主题" [ref=e183]
+            - generic [ref=e184]:
+              - button "All" [ref=e185] [cursor=pointer]
+              - button "Tier 1" [ref=e186] [cursor=pointer]
+              - button "Tier 2" [ref=e187] [cursor=pointer]
+              - button "Tier 3" [ref=e188] [cursor=pointer]
+            - combobox [ref=e190]:
+              - option "All Impact" [selected]
+              - option "待分析 (2)"
+            - combobox [ref=e192]:
+              - option "All Forms" [selected]
+              - option "4 (2)"
+            - combobox [ref=e194]:
+              - option "All Themes" [selected]
+              - option "insider (2)"
+            - button "Clear" [ref=e195] [cursor=pointer]
+          - generic [ref=e196]:
+            - button "All" [ref=e197] [cursor=pointer]
+            - button "Insider Activity" [ref=e198] [cursor=pointer]
+        - generic [ref=e199]:
+          - article [ref=e200]:
+            - generic [ref=e201]:
+              - generic [ref=e202]:
+                - generic [ref=e203]:
+                  - generic [ref=e204]: Tier 2
+                  - generic [ref=e205]: "4"
+                  - generic [ref=e206]: 待分析
+                  - generic [ref=e207]: Signal 59
+                - heading "GOOGL · Alphabet" [level=3] [ref=e208]
+              - generic [ref=e209]: 2026年3月19日 上午01:51
+            - generic [ref=e210]: Form 4
+            - button "Insider Activity" [ref=e212]
+            - generic [ref=e213]: "Filed: 2026-03-18 AccNo: 0001193125-26-114872 Size: 11 KB"
+            - generic [ref=e214]:
+              - generic [ref=e215]: 0 chars · 0 chunks
+              - generic [ref=e216]:
+                - button "Focus" [ref=e217] [cursor=pointer]
+                - button "Open dossier" [ref=e218] [cursor=pointer]
+          - article [ref=e219]:
+            - generic [ref=e220]:
+              - generic [ref=e221]:
+                - generic [ref=e222]:
+                  - generic [ref=e223]: Tier 2
+                  - generic [ref=e224]: "4"
+                  - generic [ref=e225]: 待分析
+                  - generic [ref=e226]: Signal 59
+                - heading "GOOGL · Alphabet" [level=3] [ref=e227]
+              - generic [ref=e228]: 2026年3月19日 上午01:50
+            - generic [ref=e229]: Form 4
+            - button "Insider Activity" [ref=e231]
+            - generic [ref=e232]: "Filed: 2026-03-18 AccNo: 0001193125-26-114871 Size: 7 KB"
+            - generic [ref=e233]:
+              - generic [ref=e234]: 0 chars · 0 chunks
+              - generic [ref=e235]:
+                - button "Focus" [ref=e236] [cursor=pointer]
+                - button "Open dossier" [ref=e237] [cursor=pointer]
+      - generic [ref=e238]:
+        - generic [ref=e239]:
+          - generic [ref=e240]:
+            - paragraph [ref=e241]: Flow
+            - heading "Signal Velocity" [level=2] [ref=e242]
+          - paragraph [ref=e243]: 最近 14 天分 tier 入库情况，显示 watchlist 的事件密度变化。
+        - generic [ref=e245]:
+          - generic "2026-03-19 | T1 0 / T2 2 / T3 0" [ref=e246]
+          - generic [ref=e250]: 03/19
+          - generic [ref=e251]: "2"
+      - generic [ref=e252]:
+        - generic [ref=e253]:
+          - generic [ref=e254]:
+            - paragraph [ref=e255]: Pulse
+            - heading "Impact Stack" [level=2] [ref=e256]
+          - paragraph [ref=e257]: 已有分析结果的影响分布与 Telegram / LLM 运行状态。
+        - generic [ref=e258]:
+          - generic [ref=e259]:
+            - generic [ref=e260]:
+              - strong [ref=e261]: LLM
+              - generic [ref=e262]: ready
+            - strong [ref=e265]: 100%
+          - generic [ref=e266]:
+            - generic [ref=e267]:
+              - strong [ref=e268]: Telegram
+              - generic [ref=e269]: live
+            - strong [ref=e272]: 100%
+          - generic [ref=e273]:
+            - generic [ref=e274]:
+              - strong [ref=e275]: 利好
+              - generic [ref=e276]: 0 filings
+            - strong [ref=e279]: 0%
+          - generic [ref=e280]:
+            - generic [ref=e281]:
+              - strong [ref=e282]: 利空
+              - generic [ref=e283]: 0 filings
+            - strong [ref=e286]: 0%
+          - generic [ref=e287]:
+            - generic [ref=e288]:
+              - strong [ref=e289]: 中性
+              - generic [ref=e290]: 0 filings
+            - strong [ref=e293]: 0%
+      - generic [ref=e294]:
+        - generic [ref=e295]:
+          - generic [ref=e296]:
+            - paragraph [ref=e297]: Operations
+            - heading "Ingestion Runs" [level=2] [ref=e298]
+          - paragraph [ref=e299]: 采集质量、匹配率与分析覆盖率的运行历史。
+        - generic [ref=e300]:
+          - generic [ref=e301]:
+            - generic [ref=e302]:
+              - generic [ref=e303]: running
+              - generic [ref=e304]: 2026年3月19日 上午04:12
+            - generic [ref=e305]:
+              - strong [ref=e306]: "0"
+              - generic [ref=e307]: seen
+            - generic [ref=e308]:
+              - strong [ref=e309]: "0"
+              - generic [ref=e310]: matched
+            - generic [ref=e311]:
+              - strong [ref=e312]: "0"
+              - generic [ref=e313]: new
+            - generic [ref=e314]:
+              - strong [ref=e315]: "0"
+              - generic [ref=e316]: updated
+            - generic [ref=e317]:
+              - strong [ref=e318]: "0"
+              - generic [ref=e319]: analyzed
+          - generic [ref=e320]:
+            - generic [ref=e321]:
+              - generic [ref=e322]: completed
+              - generic [ref=e323]: 2026年3月19日 上午04:00
+            - generic [ref=e324]:
+              - strong [ref=e325]: "100"
+              - generic [ref=e326]: seen
+            - generic [ref=e327]:
+              - strong [ref=e328]: "2"
+              - generic [ref=e329]: matched
+            - generic [ref=e330]:
+              - strong [ref=e331]: "0"
+              - generic [ref=e332]: new
+            - generic [ref=e333]:
+              - strong [ref=e334]: "2"
+              - generic [ref=e335]: updated
+            - generic [ref=e336]:
+              - strong [ref=e337]: "0"
+              - generic [ref=e338]: analyzed
+          - generic [ref=e339]:
+            - generic [ref=e340]:
+              - generic [ref=e341]: completed
+              - generic [ref=e342]: 2026年3月19日 上午03:57
+            - generic [ref=e343]:
+              - strong [ref=e344]: "100"
+              - generic [ref=e345]: seen
+            - generic [ref=e346]:
+              - strong [ref=e347]: "2"
+              - generic [ref=e348]: matched
+            - generic [ref=e349]:
+              - strong [ref=e350]: "0"
+              - generic [ref=e351]: new
+            - generic [ref=e352]:
+              - strong [ref=e353]: "2"
+              - generic [ref=e354]: updated
+            - generic [ref=e355]:
+              - strong [ref=e356]: "0"
+              - generic [ref=e357]: analyzed
+          - generic [ref=e358]:
+            - generic [ref=e359]:
+              - generic [ref=e360]: completed
+              - generic [ref=e361]: 2026年3月19日 上午03:54
+            - generic [ref=e362]:
+              - strong [ref=e363]: "100"
+              - generic [ref=e364]: seen
+            - generic [ref=e365]:
+              - strong [ref=e366]: "2"
+              - generic [ref=e367]: matched
+            - generic [ref=e368]:
+              - strong [ref=e369]: "0"
+              - generic [ref=e370]: new
+            - generic [ref=e371]:
+              - strong [ref=e372]: "2"
+              - generic [ref=e373]: updated
+            - generic [ref=e374]:
+              - strong [ref=e375]: "0"
+              - generic [ref=e376]: analyzed
+          - generic [ref=e377]:
+            - generic [ref=e378]:
+              - generic [ref=e379]: completed
+              - generic [ref=e380]: 2026年3月19日 上午03:51
+            - generic [ref=e381]:
+              - strong [ref=e382]: "100"
+              - generic [ref=e383]: seen
+            - generic [ref=e384]:
+              - strong [ref=e385]: "2"
+              - generic [ref=e386]: matched
+            - generic [ref=e387]:
+              - strong [ref=e388]: "0"
+              - generic [ref=e389]: new
+            - generic [ref=e390]:
+              - strong [ref=e391]: "2"
+              - generic [ref=e392]: updated
+            - generic [ref=e393]:
+              - strong [ref=e394]: "0"
+              - generic [ref=e395]: analyzed
+          - generic [ref=e396]:
+            - generic [ref=e397]:
+              - generic [ref=e398]: running
+              - generic [ref=e399]: 2026年3月19日 上午03:49
+            - generic [ref=e400]:
+              - strong [ref=e401]: "100"
+              - generic [ref=e402]: seen
+            - generic [ref=e403]:
+              - strong [ref=e404]: "2"
+              - generic [ref=e405]: matched
+            - generic [ref=e406]:
+              - strong [ref=e407]: "0"
+              - generic [ref=e408]: new
+            - generic [ref=e409]:
+              - strong [ref=e410]: "0"
+              - generic [ref=e411]: updated
+            - generic [ref=e412]:
+              - strong [ref=e413]: "0"
+              - generic [ref=e414]: analyzed
+          - generic [ref=e415]:
+            - generic [ref=e416]:
+              - generic [ref=e417]: completed
+              - generic [ref=e418]: 2026年3月19日 上午03:38
+            - generic [ref=e419]:
+              - strong [ref=e420]: "100"
+              - generic [ref=e421]: seen
+            - generic [ref=e422]:
+              - strong [ref=e423]: "2"
+              - generic [ref=e424]: matched
+            - generic [ref=e425]:
+              - strong [ref=e426]: "2"
+              - generic [ref=e427]: new
+            - generic [ref=e428]:
+              - strong [ref=e429]: "0"
+              - generic [ref=e430]: updated
+            - generic [ref=e431]:
+              - strong [ref=e432]: "0"
+              - generic [ref=e433]: analyzed
+  - dialog "Search and command" [ref=e435]:
+    - generic [ref=e436]:
+      - searchbox "搜索 filing 或执行命令，例如 tier 1 / financing / NVDA" [active] [ref=e438]
+      - button "Close" [ref=e439] [cursor=pointer]
+    - generic [ref=e440]:
+      - button "Reset feed filters 清空 query / tier / impact / form / theme action" [ref=e441] [cursor=pointer]:
+        - generic [ref=e442]:
+          - strong [ref=e443]: Reset feed filters
+          - generic [ref=e444]: 清空 query / tier / impact / form / theme
+        - generic [ref=e445]: action
+      - button "Focus Tier 1 只显示 Tier 1 披露 action" [ref=e446] [cursor=pointer]:
+        - generic [ref=e447]:
+          - strong [ref=e448]: Focus Tier 1
+          - generic [ref=e449]: 只显示 Tier 1 披露
+        - generic [ref=e450]: action
+      - button "Show negative filings 只显示利空分析结果 action" [ref=e451] [cursor=pointer]:
+        - generic [ref=e452]:
+          - strong [ref=e453]: Show negative filings
+          - generic [ref=e454]: 只显示利空分析结果
+        - generic [ref=e455]: action
+      - button "Show financing theme 聚焦 Financing / Dilution 主题 action" [ref=e456] [cursor=pointer]:
+        - generic [ref=e457]:
+          - strong [ref=e458]: Show financing theme
+          - generic [ref=e459]: 聚焦 Financing / Dilution 主题
+        - generic [ref=e460]: action
+      - button "Toggle focus watchlist 切换 focus-only 模式 action" [ref=e461] [cursor=pointer]:
+        - generic [ref=e462]:
+          - strong [ref=e463]: Toggle focus watchlist
+          - generic [ref=e464]: 切换 focus-only 模式
+        - generic [ref=e465]: action
+      - button "GOOGL · Alphabet Elevated · score 48 ticker" [ref=e466] [cursor=pointer]:
+        - generic [ref=e467]:
+          - strong [ref=e468]: GOOGL · Alphabet
+          - generic [ref=e469]: Elevated · score 48
+        - generic [ref=e470]: ticker
+      - button "Insider Activity Insider Activity 主题近 21 天出现 2 次，覆盖 GOOGL。 theme" [ref=e471] [cursor=pointer]:
+        - generic [ref=e472]:
+          - strong [ref=e473]: Insider Activity
+          - generic [ref=e474]: Insider Activity 主题近 21 天出现 2 次，覆盖 GOOGL。
+        - generic [ref=e475]: theme
+      - 'button "GOOGL · 4 · Tier 2 Filed: 2026-03-18 AccNo: 0001193125-26-114872 Size: 11 KB filing" [ref=e476] [cursor=pointer]':
+        - generic [ref=e477]:
+          - strong [ref=e478]: GOOGL · 4 · Tier 2
+          - generic [ref=e479]: "Filed: 2026-03-18 AccNo: 0001193125-26-114872 Size: 11 KB"
+        - generic [ref=e480]: filing
+      - 'button "GOOGL · 4 · Tier 2 Filed: 2026-03-18 AccNo: 0001193125-26-114871 Size: 7 KB filing" [ref=e481] [cursor=pointer]':
+        - generic [ref=e482]:
+          - strong [ref=e483]: GOOGL · 4 · Tier 2
+          - generic [ref=e484]: "Filed: 2026-03-18 AccNo: 0001193125-26-114871 Size: 7 KB"
+        - generic [ref=e485]: filing
+    - generic [ref=e486]: 回车执行，Esc 关闭。支持快速命令、ticker 聚焦和 filing 直达。

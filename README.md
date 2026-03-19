@@ -50,6 +50,15 @@
 - `ingestion_runs`
   - 每次轮询的运行记录
   - 便于监控匹配率、异常和分析覆盖率
+- `telegram_chats`
+  - Telegram 会话元数据
+  - 保存订阅状态、助手开关、最近收发时间
+- `telegram_messages`
+  - Telegram 入站 / 出站消息日志
+  - 便于后续评测、回放、运营审计和 LLM 数据沉淀
+- `telegram_state`
+  - Telegram offset 与处理状态
+  - 用于长轮询幂等与 webhook 去重
 
 ### 3. 分析层
 
@@ -64,6 +73,12 @@
 网页已重做为真正的监控台，而不是 Firebase 读库模板页：
 
 - 总览指标
+- SEC Brief
+- Signal Index
+- Theme Correlations
+- 本地 focus watchlist
+- 持久化筛选与操作偏好
+- Search / Command 入口
 - 最近 14 天 tier 趋势
 - LLM corpus readiness
 - 情绪分布
@@ -89,7 +104,7 @@
 │   └── services/
 │       ├── sec_client.py      # SEC feed + 文档抓取
 │       ├── analysis.py        # 多 provider 分析层
-│       └── telegram.py        # Telegram 通知
+│       └── telegram.py        # Telegram alerts + assistant + webhook/polling handling
 ├── public/
 │   ├── index.html             # 新版控制台
 │   ├── styles.css
@@ -113,6 +128,27 @@
 - 数据导出：可直接导出 JSONL 语料包
 - 可运维：保存 ingestion runs，页面可见运行历史
 - 可升级：SQLite 到 Postgres 只需切换 `DATABASE_URL`
+- worldmonitor 风格情报层：brief、signal index、theme correlation、focus watchlist、可保存的工作台偏好
+
+## 这次参考 worldmonitor 加入了什么
+
+我没有照搬它的地图、地缘和多源新闻层，而是抽取了最适合 SEC Monitor 的核心机制：
+
+- `SEC Brief`
+  - 参考 worldmonitor 的 intelligence brief / daily brief 思路
+  - 把最近真实 filing 聚合成统一概览、行动建议和风险观察
+- `Signal Index`
+  - 参考它的 composite risk score 思路
+  - 把 tier、form、主题、影响、时效性折成 ticker 级别的关注度指数
+- `Theme Correlations`
+  - 参考它的 cross-stream correlation
+  - 把跨 ticker 的披露按融资、业绩、治理、并购、合规、内部人活动等主题聚合
+- `Focus Watchlist + Preferences`
+  - 参考它的本地 watchlist / settings 持久化
+  - 用户可在浏览器里保存自己的 focus ticker、dense mode、auto refresh、focus-only 模式
+- `Search / Command`
+  - 参考它的 search modal / command workflow
+  - 可快速筛选 Tier 1、负面披露、主题簇、ticker 和单条 filing
 
 ## 数据原则
 
@@ -168,6 +204,15 @@ cp .env.example .env
 - `TELEGRAM_CHAT_ID`
   - 现在是可选项
   - 不填时，系统会通过 Telegram `getUpdates` 自动搜索最近活跃会话并选取最新 `chat_id`
+- `TELEGRAM_ASSISTANT_ENABLED`
+  - 是否启用 Telegram 双向助手
+- `TELEGRAM_ALLOWED_CHAT_IDS`
+  - 可选
+  - 使用逗号分隔允许访问助手的 `chat_id`
+  - 不填则默认允许所有主动与 bot 建立会话的聊天
+- `TELEGRAM_WEBHOOK_SECRET`
+  - webhook 模式建议配置
+  - 用于校验 Telegram webhook secret header
 
 ### Provider 选择
 
@@ -323,6 +368,9 @@ GITHUB_MODELS_ORG=
 ```text
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
+TELEGRAM_ASSISTANT_ENABLED=true
+TELEGRAM_ALLOWED_CHAT_IDS=
+TELEGRAM_WEBHOOK_SECRET=
 ```
 
 - `TELEGRAM_BOT_TOKEN`
@@ -347,6 +395,15 @@ https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates
   - 如果 bot 配置了 webhook，Telegram 不允许同时使用 `getUpdates`，这时需要手动填 `TELEGRAM_CHAT_ID`
   - 官方文档：
     - https://core.telegram.org/bots/api
+- `TELEGRAM_ASSISTANT_ENABLED`
+  - 默认 `true`
+  - 设为 `false` 时保留 alert 能力，但不处理用户消息和指令
+- `TELEGRAM_ALLOWED_CHAT_IDS`
+  - 可选访问控制
+  - 如果你只希望少数私聊 / 群组能使用助手，把允许的 `chat_id` 用逗号填进去
+- `TELEGRAM_WEBHOOK_SECRET`
+  - 用于 Telegram webhook header 校验
+  - 线上部署建议配置，降低伪造请求风险
 
 ### 这些值哪些通常不用改
 
@@ -395,6 +452,70 @@ python sec_monitor.py run-worker
 ```bash
 python sec_monitor.py ingest-once
 ```
+
+### 5. 启动 Telegram 双向助手
+
+现在 Telegram 已经不是单向通知器，而是完整的会话入口。用户可以直接发送命令或自然语言问题，系统会基于数据库里的真实 SEC 数据检索，并调用你当前配置的 LLM provider 回答。
+
+长轮询模式：
+
+```bash
+python sec_monitor.py run-telegram-worker
+```
+
+只同步一次更新：
+
+```bash
+python sec_monitor.py telegram-sync-once
+```
+
+可用命令：
+
+- `/start`
+- `/stop`
+- `/help`
+- `/status`
+- `/subscribe`
+- `/unsubscribe`
+- `/latest [数量]`
+- `/ticker <代码> [数量]`
+- `/search <关键词>`
+- `/ask <问题>`
+
+也支持直接发送自然语言，例如：
+
+- `总结一下 NVDA 最近的 SEC 披露`
+- `找出最近涉及融资或稀释风险的文件`
+- `AMD 最近有没有高优先级 8-K`
+
+回答原则：
+
+- 只使用本地数据库里已经持久化的真实 SEC 数据
+- 不使用 demo、mock 或虚构样本
+- 如果证据不足，会明确说数据库信息不够
+- 默认附上 `filing_id / ticker / form / date` 作为资料来源
+
+### 6. Telegram Webhook 部署
+
+线上环境推荐 webhook，而不是持续长轮询。项目已提供：
+
+```text
+POST /api/integrations/telegram/webhook
+```
+
+建议在 `.env` 中设置：
+
+```text
+TELEGRAM_WEBHOOK_SECRET=your-secret
+```
+
+然后在 Telegram webhook 配置里使用同一个 secret，让 Telegram 通过 `X-Telegram-Bot-Api-Secret-Token` 发送到服务端。
+
+注意：
+
+- webhook 与 `getUpdates` 不能同时使用
+- 如果你启用了 webhook，就不要再运行 `run-telegram-worker`
+- 本地调试更适合长轮询，生产部署更适合 webhook
 
 ### Copilot Provider 官方认证方式
 
@@ -500,10 +621,28 @@ python sec_monitor.py export-llm-dataset --output data/llm_corpus.jsonl
 - 总 filing 数
 - analysis 数
 - chunk 数
+- `SEC Brief`
+- `Signal Index`
+- `Theme Correlations`
+- feed facets
 - tier 分布
 - sentiment 分布
 - 最近 filings
 - 最近 runs
+- Telegram bot / assistant 可用状态
+- Telegram 订阅会话数量
+
+### `GET /api/feed`
+
+返回可筛选的 filing feed，支持：
+
+- `q`
+- `tier`
+- `impact`
+- `form_type`
+- `theme`
+- `tickers`
+- `limit`
 
 ### `GET /api/filings/{id}`
 
@@ -513,6 +652,10 @@ python sec_monitor.py export-llm-dataset --output data/llm_corpus.jsonl
 - raw document text
 - chunk 列表
 - 链接和元信息
+
+### `POST /api/integrations/telegram/webhook`
+
+供 Telegram webhook 调用的入站消息处理接口。
 
 ## 当前默认策略
 

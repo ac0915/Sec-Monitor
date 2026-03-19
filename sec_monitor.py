@@ -18,12 +18,26 @@ def run_worker(service: IngestionService) -> None:
         time.sleep(settings.poll_interval_seconds)
 
 
+def run_telegram_worker(service: IngestionService) -> None:
+    settings = get_settings()
+    while True:
+        try:
+            stats = service.sync_telegram_once()
+            if stats["updates_seen"] or stats["errors"]:
+                print(json.dumps(stats, ensure_ascii=False))
+        except Exception as exc:
+            print(json.dumps({"telegram_worker_error": str(exc)}, ensure_ascii=False))
+            time.sleep(settings.telegram_updates_poll_interval_seconds)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Industrial SEC filing monitor")
     subparsers = parser.add_subparsers(dest="command")
 
     subparsers.add_parser("ingest-once", help="Poll the SEC feed once and store results")
     subparsers.add_parser("run-worker", help="Run the continuous polling worker")
+    subparsers.add_parser("telegram-sync-once", help="Pull Telegram updates once and process commands")
+    subparsers.add_parser("run-telegram-worker", help="Run the Telegram assistant long-poll worker")
 
     export_parser = subparsers.add_parser(
         "export-llm-dataset",
@@ -57,9 +71,16 @@ def main() -> None:
         print(json.dumps({"output": str(output_path), "records": count}, ensure_ascii=False, indent=2))
         return
 
+    if command == "telegram-sync-once":
+        print(json.dumps(service.sync_telegram_once(), ensure_ascii=False, indent=2))
+        return
+
+    if command == "run-telegram-worker":
+        run_telegram_worker(service)
+        return
+
     run_worker(service)
 
 
 if __name__ == "__main__":
     main()
-

@@ -10,10 +10,20 @@ from sqlalchemy.orm import Session, selectinload
 
 from .config import get_settings
 from .database import SessionLocal, init_db
-from .models import AnalysisResult, Filing, FilingChunk, IngestionRun, utc_now
+from .models import AnalysisResult, Filing, FilingChunk, IngestionRun, TelegramChat, utc_now
 from .services.analysis import build_analysis_service
+from .services.intelligence import (
+    build_feed_facets,
+    build_sec_brief,
+    build_signal_index,
+    build_theme_clusters,
+    classify_filing_themes,
+    clean_text,
+    compute_filing_signal_score,
+    filter_feed_filings,
+)
 from .services.sec_client import FilingCandidate, SECClient
-from .services.telegram import TelegramNotifier
+from .services.telegram import TelegramAssistantService, TelegramNotifier
 from .watchlist import WATCHLIST
 
 
@@ -58,6 +68,7 @@ class IngestionService:
         self.sec_client = SECClient(self.settings)
         self.analysis_service = build_analysis_service(self.settings)
         self.telegram = TelegramNotifier(self.settings)
+        self.telegram_assistant = TelegramAssistantService(self.settings, analysis_service=self.analysis_service)
 
     def ingest_once(self) -> dict:
         init_db()
@@ -175,6 +186,12 @@ class IngestionService:
 
         return count
 
+    def sync_telegram_once(self) -> dict:
+        return self.telegram_assistant.sync_updates_once()
+
+    def process_telegram_update(self, update: dict) -> dict:
+        return self.telegram_assistant.process_update_payload(update)
+
     def dashboard_snapshot(self) -> dict:
         init_db()
         with SessionLocal() as db:
@@ -185,10 +202,20 @@ class IngestionService:
                 .limit(self.settings.dashboard_recent_limit)
             ).scalars().all()
 
-            all_filings = db.execute(select(Filing)).scalars().all()
+            all_filings = db.execute(
+                select(Filing)
+                .options(selectinload(Filing.analysis))
+                .order_by(Filing.published_at.desc())
+            ).scalars().all()
             runs = db.execute(select(IngestionRun).order_by(IngestionRun.started_at.desc()).limit(10)).scalars().all()
             chunk_count = db.scalar(select(func.count(FilingChunk.id))) or 0
             analyzed_count = db.scalar(select(func.count(AnalysisResult.id))) or 0
+            telegram_subscribers = db.scalar(
+                select(func.count(TelegramChat.id)).where(TelegramChat.alerts_enabled.is_(True))
+            ) or 0
+            telegram_assistant_chats = db.scalar(
+                select(func.count(TelegramChat.id)).where(TelegramChat.assistant_enabled.is_(True))
+            ) or 0
 
             sentiment_counts = {"利好": 0, "利空": 0, "中性": 0}
             for filing in all_filings:
@@ -206,6 +233,10 @@ class IngestionService:
                 "tier2": len([filing for filing in all_filings if filing.tier == 2]),
                 "tier3": len([filing for filing in all_filings if filing.tier == 3]),
             }
+            filtered_feed = filter_feed_filings(
+                filings,
+                limit=self.settings.dashboard_recent_limit,
+            )
 
             return {
                 "app": self.settings.app_name,
@@ -214,6 +245,13 @@ class IngestionService:
                     "provider": self.analysis_service.provider_name,
                     "model": self.analysis_service.selected_model,
                     "available": self.analysis_service.available,
+                },
+                "telegram": {
+                    "bot_available": self.telegram.available,
+                    "assistant_available": self.telegram_assistant.available,
+                    "subscribed_chats": telegram_subscribers,
+                    "assistant_chats": telegram_assistant_chats,
+                    "webhook_enabled": bool(self.settings.telegram_webhook_secret),
                 },
                 "data_policy": {
                     "synthetic_data": False,
@@ -237,9 +275,60 @@ class IngestionService:
                     {"date": day, **counts}
                     for day, counts in sorted(daily_counts.items())[-14:]
                 ],
-                "recent_filings": [serialize_filing_summary(filing) for filing in filings],
+                "sec_brief": build_sec_brief(all_filings[:40]),
+                "signal_index": build_signal_index(all_filings),
+                "theme_clusters": build_theme_clusters(all_filings),
+                "feed_facets": build_feed_facets(all_filings),
+                "recent_filings": [serialize_filing_summary(filing) for filing in filtered_feed],
                 "last_run": serialize_run(runs[0]) if runs else None,
                 "recent_runs": [serialize_run(run) for run in runs],
+            }
+
+    def feed_snapshot(
+        self,
+        *,
+        query: str = "",
+        tier: str = "all",
+        ticker: str = "",
+        form_type: str = "",
+        impact: str = "all",
+        theme: str = "all",
+        tickers: tuple[str, ...] = (),
+        limit: int = 80,
+    ) -> dict:
+        init_db()
+        with SessionLocal() as db:
+            filings = db.execute(
+                select(Filing)
+                .options(selectinload(Filing.analysis), selectinload(Filing.chunks))
+                .order_by(Filing.published_at.desc())
+            ).scalars().all()
+            filtered_all = filter_feed_filings(
+                filings,
+                query=query,
+                tier=tier,
+                ticker=ticker,
+                form_type=form_type,
+                impact=impact,
+                theme=theme,
+                tickers=tickers,
+                limit=max(limit, len(filings) or 1),
+            )
+            filtered = filtered_all[:limit]
+            return {
+                "filters": {
+                    "query": query,
+                    "tier": tier,
+                    "ticker": ticker,
+                    "form_type": form_type,
+                    "impact": impact,
+                    "theme": theme,
+                    "tickers": list(tickers),
+                    "limit": limit,
+                },
+                "total_matches": len(filtered_all),
+                "results": [serialize_filing_summary(filing) for filing in filtered],
+                "facets": build_feed_facets(filings),
             }
 
     def filing_detail(self, filing_id: int) -> dict | None:
@@ -367,18 +456,19 @@ class IngestionService:
 
     def _send_telegram(self, db: Session, filing: Filing) -> None:
         try:
-            self.telegram.send_filing_alert(filing, filing.analysis)
+            deliveries = self.telegram.send_filing_alert(db, filing, filing.analysis)
         except Exception as exc:
             filing.telegram_status = f"failed:{exc}"
             db.flush()
             return
 
-        filing.telegram_status = "sent"
+        filing.telegram_status = f"sent:{deliveries}"
         filing.telegram_sent_at = utc_now()
         db.flush()
 
 
 def serialize_filing_summary(filing: Filing) -> dict:
+    themes = classify_filing_themes(filing)
     return {
         "id": filing.id,
         "ticker": filing.ticker,
@@ -387,7 +477,7 @@ def serialize_filing_summary(filing: Filing) -> dict:
         "form_type": filing.form_type,
         "tier": filing.tier,
         "sec_items": filing.sec_items,
-        "raw_feed_summary": filing.raw_feed_summary,
+        "raw_feed_summary": clean_text(filing.raw_feed_summary),
         "entry_link": filing.entry_link,
         "primary_document_url": filing.primary_document_url,
         "published_at": filing.published_at.isoformat(),
@@ -397,6 +487,8 @@ def serialize_filing_summary(filing: Filing) -> dict:
         "telegram_status": filing.telegram_status,
         "document_char_count": filing.document_char_count,
         "chunk_count": len(filing.chunks),
+        "signal_score": compute_filing_signal_score(filing),
+        "themes": themes,
         "analysis": (
             {
                 "provider": filing.analysis.provider,
