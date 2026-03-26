@@ -2151,9 +2151,13 @@
       try {
         els.refreshButton.classList.add('is-loading');
         els.refreshButton.disabled = true;
-        Promise.resolve(loadAll()).catch((err)=>{
+        const p = Promise.resolve(loadAll());
+        p.then(() => {
+          showToast('刷新完成');
+        }).catch((err) => {
           console.error('loadAll failed', err);
-        }).finally(()=>{
+          showToast('刷新失败: ' + (err && err.message ? err.message : '未知错误'));
+        }).finally(() => {
           els.refreshButton.classList.remove('is-loading');
           els.refreshButton.disabled = false;
         });

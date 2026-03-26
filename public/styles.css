@@ -1524,3 +1524,28 @@ body {
   animation: _oc_spin 1s linear infinite;
 }
 @keyframes _oc_spin { to { transform: rotate(360deg); } }
+
+/* Accessibility helpers and toast */
+.visually-hidden {
+  position: absolute !important;
+  height: 1px; width: 1px;
+  overflow: hidden; clip: rect(1px, 1px, 1px, 1px);
+  white-space: nowrap; border: 0; padding: 0; margin: -1px;
+}
+.oc-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 24px;
+  background: rgba(11,21,31,0.94);
+  color: var(--text);
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+  font-size: 0.95rem;
+  z-index: 9999;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 220ms ease, transform 220ms ease;
+}
+.oc-toast.oc-toast--visible { opacity: 1; transform: translateY(0); }
