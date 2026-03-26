@@ -2147,7 +2147,21 @@
 
   function bindEvents() {
     els.refreshButton.addEventListener("click", () => {
-      loadAll();
+      // show loading state while refresh runs
+      try {
+        els.refreshButton.classList.add('is-loading');
+        els.refreshButton.disabled = true;
+        Promise.resolve(loadAll()).catch((err)=>{
+          console.error('loadAll failed', err);
+        }).finally(()=>{
+          els.refreshButton.classList.remove('is-loading');
+          els.refreshButton.disabled = false;
+        });
+      } catch (e) {
+        els.refreshButton.classList.remove('is-loading');
+        els.refreshButton.disabled = false;
+        console.error(e);
+      }
     });
 
     els.feedSearch.addEventListener("input", (event) => {

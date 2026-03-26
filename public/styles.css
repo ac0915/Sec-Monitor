@@ -1505,3 +1505,22 @@ body {
     grid-template-columns: 1fr 1fr;
   }
 }
+/* Loading state for primary ghost buttons */
+.ghost-button.is-loading {
+  opacity: 0.85;
+  pointer-events: none;
+  position: relative;
+}
+.ghost-button.is-loading::after {
+  content: "";
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-left: 10px;
+  vertical-align: middle;
+  border: 2px solid rgba(255,255,255,0.16);
+  border-top-color: var(--text);
+  border-radius: 50%;
+  animation: _oc_spin 1s linear infinite;
+}
+@keyframes _oc_spin { to { transform: rotate(360deg); } }
