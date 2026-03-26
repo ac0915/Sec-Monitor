@@ -2,6 +2,16 @@
 
 一个面向生产化演进的 SEC 披露监控系统。它不再只是“抓 feed 然后发提醒”的单脚本，而是拆成了可持续扩展的后端 API、数据库、采集 worker、现代化监控台，以及专门为后续 LLM 学习、评测、RAG 投喂准备的语料层。
 
+Quick start (first-time run)
+
+- cp .env.example .env
+- (optional) python3 -m venv .venv && source .venv/bin/activate
+- pip install -r requirements.txt && npm install
+- alembic upgrade head  # optional but recommended on first run
+- uvicorn main:app --reload
+
+Open http://127.0.0.1:8000 in your browser. The dashboard will show "暂无真实数据" if no filings are present; this is expected for a fresh local database.
+
 ## 现在这个项目是做什么的
 
 目标很明确：
