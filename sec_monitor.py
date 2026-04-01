@@ -318,16 +318,16 @@ def main():
 
                 matched_ticker = None
                 
-                # 1. Match exact company name
+                # 1. Match company names safely using word boundaries
                 for ticker, name in TICKER_NAMES.items():
-                    if name.lower() in title.lower():
+                    if re.search(rf"\b{re.escape(name)}\b", title, re.IGNORECASE):
                         matched_ticker = ticker
                         break
                 
-                # 2. Match exact ticker (with \b regex to prevent false alarms)
+                # 2. Match Tickers STRICTLY (Case-sensitive, word boundaries)
                 if not matched_ticker:
                     for ticker in WATCHLIST:
-                        if re.search(rf'\b{re.escape(ticker)}\b', title, re.IGNORECASE):
+                        if re.search(rf"\b{re.escape(ticker)}\b", title):
                             matched_ticker = ticker
                             break
 
